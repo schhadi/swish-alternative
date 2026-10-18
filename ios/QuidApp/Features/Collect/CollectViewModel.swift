@@ -8,6 +8,15 @@ final class CollectViewModel {
     private(set) var error: AppError?
     private(set) var isLoading = false
 
+    /// True once any load has succeeded. Views use it to tell "not loaded yet" from "loaded and empty".
+    private(set) var hasLoaded = false
+
+    /// Placeholders are shown while this is true: nothing loaded yet and nothing failed (covers the first frame
+    /// before `.task` starts, the load itself, and a load cancelled by leaving the screen).
+    var isAwaitingFirstLoad: Bool {
+        !hasLoaded && error == nil
+    }
+
     let api: APIClient
 
     init(api: APIClient) {
@@ -20,6 +29,7 @@ final class CollectViewModel {
         do {
             organisations = try await api.send(API.organisations()).organisations
             error = nil
+            hasLoaded = true
         } catch is CancellationError {
             return
         } catch let appError as AppError {

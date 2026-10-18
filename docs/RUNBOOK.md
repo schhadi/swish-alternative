@@ -30,7 +30,7 @@ Useful commands:
 | `npm run db:reset` | drop and recreate the dev database |
 | `npm run build && npm start` | compiled production run |
 
-Environment variables are validated at startup by `src/config.ts`; a missing or malformed value fails fast with the field name. `LOG_PRETTY=1` (set in `.env.example`) switches on human-readable logs via pino-pretty, a devDependency; leave it unset in production, where logs are JSON.
+Environment variables are validated at startup by `src/config.ts`; a missing or malformed value fails fast with the field name. `LOG_PRETTY=1` (set in `.env.example`) switches on human-readable logs via pino-pretty, a devDependency; leave it unset in production, where logs are JSON. Note that Prisma Client also reads `backend/.env` when it is instantiated (existing variables win), so a stray `.env` next to the schema is picked up even when `NODE_ENV=test` skips our own loader; the test configuration pins every variable it depends on for that reason.
 
 ## iOS
 

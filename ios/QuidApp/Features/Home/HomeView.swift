@@ -47,7 +47,7 @@ struct HomeView: View {
             Text(viewModel.greeting)
                 .font(.quidTitle)
                 .foregroundStyle(Color.quidInk)
-                .redacted(reason: viewModel.isLoading && viewModel.me == nil ? .placeholder : [])
+                .redacted(reason: viewModel.isAwaitingFirstLoad && viewModel.me == nil ? .placeholder : [])
             bankLine
         }
     }
@@ -80,7 +80,7 @@ struct HomeView: View {
             Text("No bank account linked yet")
                 .font(.quidSubheadline)
                 .foregroundStyle(Color.quidMuted)
-        } else if viewModel.isLoading {
+        } else if viewModel.isAwaitingFirstLoad {
             Text("Loading your account")
                 .font(.quidSubheadline)
                 .foregroundStyle(Color.quidMuted)
@@ -131,7 +131,7 @@ struct HomeView: View {
     private var recentContactsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             QuidSectionHeader(title: "Recent")
-            if viewModel.isLoading && viewModel.recentContacts.isEmpty {
+            if viewModel.isAwaitingFirstLoad && viewModel.recentContacts.isEmpty {
                 HStack(spacing: 16) {
                     ForEach(0..<4, id: \.self) { _ in
                         VStack(spacing: 8) {
@@ -142,9 +142,9 @@ struct HomeView: View {
                 }
                 .accessibilityHidden(true)
             } else if viewModel.recentContacts.isEmpty {
-                Text("People you pay will show up here.")
+                Text(viewModel.error == nil ? "People you pay will show up here." : "Couldn't load your recent contacts.")
                     .font(.quidSubheadline)
-                    .foregroundStyle(Color.quidMuted)
+                    .foregroundStyle(viewModel.error == nil ? Color.quidMuted : Color.quidFailureText)
             } else {
                 ScrollView(.horizontal) {
                     HStack(alignment: .top, spacing: 16) {
@@ -192,7 +192,7 @@ struct HomeView: View {
             )
             if let error = viewModel.error, viewModel.payments.isEmpty {
                 ErrorStateView(error: error) { await viewModel.load() }
-            } else if viewModel.isLoading && viewModel.payments.isEmpty {
+            } else if viewModel.isAwaitingFirstLoad && viewModel.payments.isEmpty {
                 QuidCard(padding: 0) {
                     VStack(spacing: 0) {
                         ForEach(0..<3, id: \.self) { index in

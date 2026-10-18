@@ -16,7 +16,7 @@ struct CollectView: View {
                     ErrorStateView(error: error) { await viewModel.load() }
                         .padding(16)
                         .frame(maxHeight: .infinity, alignment: .top)
-                } else if viewModel.isLoading && viewModel.organisations.isEmpty {
+                } else if viewModel.isAwaitingFirstLoad && viewModel.organisations.isEmpty {
                     LoadingView()
                 } else if viewModel.organisations.isEmpty {
                     VStack(spacing: 16) {
@@ -72,6 +72,7 @@ struct CollectView: View {
                         }
                         .frame(minHeight: 28)
                         .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(.isHeader)
                         if organisation.collections.isEmpty {
                             QuidCard {
                                 Text("No collections yet")

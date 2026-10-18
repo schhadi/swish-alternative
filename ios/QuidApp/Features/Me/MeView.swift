@@ -12,14 +12,20 @@ struct MeView: View {
         _viewModel = State(initialValue: MeViewModel(api: api))
     }
 
+    /// Nothing loaded and nothing failed: show redacted placeholders. Stays true through a cancelled load.
+    private var showsPlaceholders: Bool {
+        viewModel.me == nil && viewModel.error == nil
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    profileCard
-                    if viewModel.me == nil, !viewModel.isLoading, let error = viewModel.error {
+                    if viewModel.me == nil, let error = viewModel.error {
+                        // The error card stays mounted while "Try again" runs; `error` is cleared only on success.
                         ErrorStateView(error: error) { await viewModel.load() }
                     } else {
+                        profileCard
                         bankSection
                         limitsSection
                     }
@@ -88,8 +94,14 @@ struct MeView: View {
                 }
             }
         }
-        .redacted(reason: viewModel.me == nil ? .placeholder : [])
-        .accessibilityElement(children: .combine)
+        .redacted(reason: showsPlaceholders ? .placeholder : [])
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(profileAccessibilityLabel)
+    }
+
+    private var profileAccessibilityLabel: String {
+        guard let me = viewModel.me else { return "Loading your profile" }
+        return "\(me.user.displayName), \(MeViewModel.formattedPhone(me.user.phoneE164))"
     }
 
     private var bankSection: some View {
@@ -114,12 +126,15 @@ struct MeView: View {
                         Button {
                             placeholder = .changeBank
                         } label: {
-                            MeRow(systemImage: "arrow.triangle.2.circlepath", title: "Change bank account", showsChevron: true)
+                            MeRow(systemImage: "arrow.triangle.2.circlepath", title: "Change bank account", accessory: .chevron)
                         }
                         .buttonStyle(.plain)
+                    } else if viewModel.me != nil {
+                        MeRow(systemImage: "building.columns", title: "No bank linked yet")
                     } else {
-                        MeRow(systemImage: "building.columns", title: viewModel.me == nil ? "Loading" : "No bank linked yet")
-                            .redacted(reason: viewModel.me == nil ? .placeholder : [])
+                        MeRow(systemImage: "building.columns", title: "Loading")
+                            .redacted(reason: .placeholder)
+                            .accessibilityHidden(true)
                     }
                 }
             }
@@ -138,7 +153,7 @@ struct MeView: View {
                     QuidDivider().padding(.leading, 58)
                     MeRow(systemImage: "calendar", title: "Per 30 days", value: limits.map { Money(minor: $0.rolling30dMinor).formatted(compact: true) })
                 }
-                .redacted(reason: viewModel.me == nil ? .placeholder : [])
+                .redacted(reason: showsPlaceholders ? .placeholder : [])
             }
             Text("Limits are set by Quid, not your bank, and apply to payments you send.")
                 .font(.quidFootnote)
@@ -166,12 +181,12 @@ struct MeView: View {
             QuidCard(padding: 0) {
                 VStack(spacing: 0) {
                     Link(destination: AppConfig.privacyURL) {
-                        MeRow(systemImage: "hand.raised", title: "Privacy policy", showsChevron: true)
+                        MeRow(systemImage: "hand.raised", title: "Privacy policy", accessory: .externalLink)
                     }
                     .buttonStyle(.plain)
                     QuidDivider().padding(.leading, 58)
                     Link(destination: AppConfig.termsURL) {
-                        MeRow(systemImage: "doc.text", title: "Terms of use", showsChevron: true)
+                        MeRow(systemImage: "doc.text", title: "Terms of use", accessory: .externalLink)
                     }
                     .buttonStyle(.plain)
                 }
@@ -211,12 +226,17 @@ struct MeView: View {
     }
 }
 
-/// Settings-style row: icon tile, title, optional trailing value and chevron. 52pt tall, so always a comfortable target.
+/// Settings-style row: icon tile, title, optional trailing value, and a chevron (pushes a screen) or an
+/// external-link glyph (leaves the app). 52pt tall, so always a comfortable target.
 struct MeRow: View {
+    enum Accessory {
+        case none, chevron, externalLink
+    }
+
     let systemImage: String
     let title: String
     var value: String? = nil
-    var showsChevron: Bool = false
+    var accessory: Accessory = .none
 
     var body: some View {
         HStack(spacing: 12) {
@@ -235,8 +255,16 @@ struct MeRow: View {
                     .font(.quidSubheadline)
                     .foregroundStyle(Color.quidMuted)
             }
-            if showsChevron {
+            switch accessory {
+            case .none:
+                EmptyView()
+            case .chevron:
                 QuidChevron()
+            case .externalLink:
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.quidMuted.opacity(0.7))
+                    .accessibilityHidden(true)
             }
         }
         .padding(.horizontal, 16)

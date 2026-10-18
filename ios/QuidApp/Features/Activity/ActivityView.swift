@@ -15,7 +15,7 @@ struct ActivityView: View {
                     ErrorStateView(error: error) { await viewModel.load() }
                         .padding(16)
                         .frame(maxHeight: .infinity, alignment: .top)
-                } else if viewModel.isLoading && viewModel.payments.isEmpty {
+                } else if viewModel.isAwaitingFirstLoad && viewModel.payments.isEmpty {
                     LoadingView()
                 } else if viewModel.payments.isEmpty {
                     EmptyStateView(

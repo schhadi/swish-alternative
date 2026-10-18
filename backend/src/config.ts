@@ -17,11 +17,10 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().default("127.0.0.1"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
-  // "1" turns on pino-pretty (a devDependency). Off by default so production starts never depend on it.
+  // "1" or "true" turns on pino-pretty (a devDependency). Off by default so production starts never depend on it.
   LOG_PRETTY: z
-    .enum(["0", "1"])
-    .default("0")
-    .transform((value) => value === "1"),
+    .preprocess(emptyToUndefined, z.enum(["0", "1", "true", "false"]).default("0"))
+    .transform((value) => value === "1" || value === "true"),
   DATABASE_URL: z.string().min(1),
   PHONE_HASH_PEPPER: z.string().min(32, "PHONE_HASH_PEPPER must be at least 32 characters"),
   BANK_DATA_KEY: z

@@ -43,6 +43,7 @@ struct QuidSectionHeader: View {
             Text(title)
                 .font(size == .large ? .quidTitle3 : .quidFootnote)
                 .foregroundStyle(size == .large ? Color.quidInk : Color.quidMuted)
+                .accessibilityAddTraits(.isHeader)
             Spacer()
             if let actionTitle, let action {
                 Button(action: action) {

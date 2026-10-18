@@ -7,6 +7,15 @@ final class MeViewModel {
     private(set) var me: MeDTO?
     private(set) var error: AppError?
     private(set) var isLoading = false
+
+    /// True once any load has succeeded. Views use it to tell "not loaded yet" from "loaded and empty".
+    private(set) var hasLoaded = false
+
+    /// Placeholders are shown while this is true: nothing loaded yet and nothing failed (covers the first frame
+    /// before `.task` starts, the load itself, and a load cancelled by leaving the screen).
+    var isAwaitingFirstLoad: Bool {
+        !hasLoaded && error == nil
+    }
     private(set) var isDeleting = false
     /// Set when account deletion fails; the view shows it as an alert and clears it.
     var deleteError: AppError?
@@ -23,6 +32,7 @@ final class MeViewModel {
         do {
             me = try await api.send(API.me())
             error = nil
+            hasLoaded = true
         } catch is CancellationError {
             return
         } catch let appError as AppError {

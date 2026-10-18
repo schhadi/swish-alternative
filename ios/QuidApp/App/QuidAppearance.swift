@@ -1,7 +1,8 @@
 import UIKit
 
 /// UIKit-driven chrome that SwiftUI cannot style directly: navigation titles and segmented controls use Manrope too.
-/// Fonts go through UIFontMetrics so Dynamic Type still scales them.
+/// Fonts go through UIFontMetrics, scaled for the current text size. Appearance proxies are static, so RootView calls
+/// `configure()` again and rebuilds the tab hierarchy when the user changes their text size while the app is running.
 enum QuidAppearance {
     static func configure() {
         let navigationBar = UINavigationBar.appearance()

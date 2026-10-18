@@ -1,11 +1,15 @@
 import type { FastifyInstance } from "fastify";
-import { buildApp } from "./app.js";
-import { env } from "./config.js";
 import { prisma } from "./lib/db.js";
 
 let app: FastifyInstance | undefined;
 
+/**
+ * Everything that can fail at startup (environment validation, logger transport, app construction, listen)
+ * happens inside main(), so one handler reports it. The imports are dynamic for that reason.
+ */
 async function main(): Promise<void> {
+  const { env } = await import("./config.js");
+  const { buildApp } = await import("./app.js");
   app = buildApp();
   await app.listen({ port: env.PORT, host: env.HOST });
   app.log.info({ env: env.NODE_ENV, truelayer: env.TRUELAYER_ENV }, "quid backend ready");

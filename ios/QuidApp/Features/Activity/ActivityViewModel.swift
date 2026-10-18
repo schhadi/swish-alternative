@@ -25,6 +25,15 @@ final class ActivityViewModel {
     private(set) var error: AppError?
     private(set) var isLoading = false
 
+    /// True once any load has succeeded. Views use it to tell "not loaded yet" from "loaded and empty".
+    private(set) var hasLoaded = false
+
+    /// Placeholders are shown while this is true: nothing loaded yet and nothing failed (covers the first frame
+    /// before `.task` starts, the load itself, and a load cancelled by leaving the screen).
+    var isAwaitingFirstLoad: Bool {
+        !hasLoaded && error == nil
+    }
+
     private let api: APIClient
 
     init(api: APIClient) {
@@ -74,6 +83,7 @@ final class ActivityViewModel {
             self.me = me
             self.payments = (sent.payments + received.payments).sorted { $0.createdAt > $1.createdAt }
             self.error = nil
+            hasLoaded = true
         } catch is CancellationError {
             return
         } catch let appError as AppError {
