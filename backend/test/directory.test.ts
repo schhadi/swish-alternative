@@ -39,6 +39,13 @@ describe("directory lookup", () => {
     expect(raw).not.toContain("+44");
   });
 
+  it("leaves out numbers that verified a code but never finished onboarding", async () => {
+    await signIn(ctx, "07700 900003");
+    const hashes = [clientPhoneHash("+447700900003"), clientPhoneHash("+447700900002")];
+    const response = await ctx.app.inject({ method: "POST", url: "/directory/lookup", headers: bearer(token), payload: { hashes } });
+    expect(response.json().registered.map((entry: { userId: string }) => entry.userId)).toEqual([priyaId]);
+  });
+
   it("ignores deleted users and duplicates", async () => {
     await prisma.user.update({ where: { id: priyaId }, data: { deletedAt: new Date(), phoneHash: null, phoneE164: null } });
     const hash = clientPhoneHash("+447700900002");

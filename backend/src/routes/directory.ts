@@ -34,7 +34,8 @@ export async function directoryRoutes(app: FastifyInstance): Promise<void> {
       const unique = [...new Set(hashes)];
       const byServerHash = new Map(unique.map((clientHash) => [serverPhoneHash(clientHash), clientHash]));
       const users = await prisma.user.findMany({
-        where: { phoneHash: { in: [...byServerHash.keys()] }, deletedAt: null, NOT: { id: callerId } },
+        // A number that verified a code but never set a name has not finished onboarding and is not "on Quid" yet.
+        where: { phoneHash: { in: [...byServerHash.keys()] }, deletedAt: null, displayName: { not: "" }, NOT: { id: callerId } },
         select: { id: true, displayName: true, phoneHash: true },
       });
       const registered = users.flatMap((user) => {

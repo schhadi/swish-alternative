@@ -1,4 +1,4 @@
-import type { BankAccount } from "@prisma/client";
+import { Prisma, type BankAccount } from "@prisma/client";
 import { decryptField, encryptField } from "../lib/crypto.js";
 import { prisma } from "../lib/db.js";
 import { LIMITS } from "../limits.js";
@@ -52,20 +52,27 @@ export async function storeUserBankAccount(
 ): Promise<{ account: BankAccount; replaced: boolean; identifiersChanged: boolean }> {
   const ownerKey = userOwnerKey(userId);
   const encrypted = encryptBankDetails(ownerKey, details);
-  const existing = await prisma.bankAccount.findUnique({ where: { userId } });
+  let existing = await prisma.bankAccount.findUnique({ where: { userId } });
   if (!existing) {
-    const account = await prisma.bankAccount.create({
-      data: {
-        ...encrypted,
-        userId,
-        providerId: details.providerId,
-        copStatus: "MATCH",
-        verifiedAt: now,
-        createdAt: now,
-        changedAt: now,
-      },
-    });
-    return { account, replaced: false, identifiersChanged: false };
+    try {
+      const account = await prisma.bankAccount.create({
+        data: {
+          ...encrypted,
+          userId,
+          providerId: details.providerId,
+          copStatus: "MATCH",
+          verifiedAt: now,
+          createdAt: now,
+          changedAt: now,
+        },
+      });
+      return { account, replaced: false, identifiersChanged: false };
+    } catch (error) {
+      // Two first-time links at once (a retry after a timeout, a second device): the loser of the unique(userId)
+      // race takes the update path instead of surfacing as a 500.
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) throw error;
+      existing = await prisma.bankAccount.findUniqueOrThrow({ where: { userId } });
+    }
   }
   const current = decryptBankDetails(ownerKey, existing);
   const identifiersChanged = current.sortCode !== details.sortCode || current.accountNumber !== details.accountNumber;

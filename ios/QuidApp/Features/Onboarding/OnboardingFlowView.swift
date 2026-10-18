@@ -19,6 +19,12 @@ struct OnboardingFlowView: View {
         .tint(Color.quidAccentText)
         // Keeps RootView on this flow while the session appears mid-way (after the code is verified).
         .onAppear { appEnvironment.startOnboarding() }
+        // The system back button pops the code step; its error must not follow the user to the phone screen.
+        .onChange(of: viewModel.path) { oldPath, newPath in
+            if newPath.count < oldPath.count, oldPath.last == .code {
+                viewModel.resetCodeStep()
+            }
+        }
     }
 
     @ViewBuilder

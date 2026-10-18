@@ -71,6 +71,17 @@ describe("me", () => {
     expect(JSON.stringify(me.json())).not.toContain("11112222");
   });
 
+  it("survives two first-time links arriving together", async () => {
+    const payload = { sortCode: "04-00-04", accountNumber: "11112222", accountHolderName: "Sam Okafor", providerId: "ob-monzo" };
+    const responses = await Promise.all(
+      Array.from({ length: 3 }, () => ctx.app.inject({ method: "PUT", url: "/me/bank-account", headers: bearer(token), payload })),
+    );
+    expect(responses.map((r) => r.statusCode)).toEqual([200, 200, 200]);
+    expect(await prisma.bankAccount.count({ where: { userId } })).toBe(1);
+    const me = await ctx.app.inject({ method: "GET", url: "/me", headers: bearer(token) });
+    expect(me.json().bankAccount.coolingOffUntil).toBeNull();
+  });
+
   it("asks for confirmation on CLOSE_MATCH and stores nothing", async () => {
     const response = await ctx.app.inject({
       method: "PUT",

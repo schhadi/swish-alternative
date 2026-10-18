@@ -27,6 +27,20 @@ const EnvSchema = z.object({
     .string()
     .regex(/^[0-9a-fA-F]{64}$/, "BANK_DATA_KEY must be 32 bytes as 64 hex characters"),
   PUBLIC_BASE_URL: z.string().url().default("http://localhost:3000"),
+  // Behind ngrok or a load balancer the client address is in X-Forwarded-For. Off by default. Set a hop count ("1")
+  // or a comma-separated address/CIDR list ("loopback,10.0.0.0/8"). Never "true": the leftmost header value is
+  // client-controlled and would let a caller choose their own rate-limit bucket.
+  TRUST_PROXY: z
+    .preprocess(emptyToUndefined, z.string().optional())
+    .transform((value, ctx): false | number | string[] => {
+      if (value === undefined || value === "0" || value === "false") return false;
+      if (value === "true") {
+        ctx.addIssue({ code: "custom", message: "TRUST_PROXY must be a hop count or an address list, not true" });
+        return z.NEVER;
+      }
+      if (/^\d+$/.test(value)) return Number(value);
+      return value.split(",").map((entry) => entry.trim()).filter(Boolean);
+    }),
   // Pluggable senders/verifiers (docs/SPEC.md sections 5 and 6). "log"/"fake" are dev-only and refused in production.
   SMS_SENDER: z.enum(["log", "none"]).default("log"),
   COP_VERIFIER: z.enum(["fake", "none"]).default("fake"),

@@ -72,6 +72,12 @@ struct OTPCodeView: View {
             .accessibilityIdentifier("onboarding.continue")
         }
         .onAppear { isFocused = true }
+        // The field is cleared on a wrong code, so VoiceOver hears the rejection rather than silence.
+        .onChange(of: viewModel.error) {
+            guard let error = viewModel.error else { return }
+            let message = viewModel.isLocked ? "Too many attempts. Request a new code to carry on." : error.userMessage
+            AccessibilityNotification.Announcement(message).post()
+        }
         .onChange(of: viewModel.code) {
             if viewModel.code.count == 6, !viewModel.isSubmitting, !viewModel.isLocked {
                 Task { await viewModel.submitCode() }

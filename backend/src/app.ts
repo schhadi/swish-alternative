@@ -32,6 +32,8 @@ export interface BuildAppOptions {
    * every injected request shares 127.0.0.1, so a file of tests would trip the production cap.
    */
   authRequestsPerMinutePerIp?: number;
+  /** Fastify's trustProxy (default env.TRUST_PROXY). Tests set it to prove per-IP limits key on X-Forwarded-For. */
+  trustProxy?: boolean | number | string | string[];
 }
 
 declare module "fastify" {
@@ -40,12 +42,20 @@ declare module "fastify" {
   }
 }
 
+/** Fastify's typings leave out the hop-count form that its runtime accepts, so a number becomes the equivalent function. */
+function trustProxySetting(value: boolean | number | string | string[]): boolean | string | string[] | ((address: string, hop: number) => boolean) {
+  if (typeof value === "number") {
+    return (_address: string, hop: number) => hop < value;
+  }
+  return value;
+}
+
 /**
  * Builds the Fastify app without starting it, so tests can use `app.inject`.
  * Every error response has the shape { error: string, message: string, details?: {...}, issues?: [...] }.
  */
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
-  const app = Fastify({ logger: loggerOptions });
+  const app = Fastify({ logger: loggerOptions, trustProxy: trustProxySetting(options.trustProxy ?? env.TRUST_PROXY) });
 
   const services: AppServices = {
     smsSender: options.services?.smsSender ?? (env.SMS_SENDER === "log" ? new LogSmsSender(app.log) : new NotImplementedSmsSender()),

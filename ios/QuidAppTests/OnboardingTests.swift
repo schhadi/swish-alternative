@@ -189,6 +189,77 @@ final class OnboardingTests: XCTestCase {
         XCTAssertFalse(defaults.bool(forKey: "onboarding.contactsExplainerSeen"), "the demo must not persist flags")
     }
 
+    func testCodeAndBankFieldsKeepDigitsOnly() {
+        // These observers reassign themselves; unguarded, that recursed forever on an @Observable class.
+        let environment = freshEnvironment(signedIn: false)
+        let viewModel = OnboardingViewModel(environment: environment)
+        viewModel.code = "12 34-5678"
+        XCTAssertEqual(viewModel.code, "123456")
+        viewModel.code = ""
+        XCTAssertEqual(viewModel.code, "")
+        viewModel.bankLink.sortCode = "12-34-56-78"
+        XCTAssertEqual(viewModel.bankLink.sortCode, "123456")
+        viewModel.bankLink.accountNumber = "1234 5678 9"
+        XCTAssertEqual(viewModel.bankLink.accountNumber, "12345678")
+    }
+
+    func testInternationalPhoneSubmitsTheRightNumber() async {
+        let environment = freshEnvironment(signedIn: false)
+        let viewModel = OnboardingViewModel(environment: environment)
+        viewModel.phoneInput = "+447700900123"
+        XCTAssertEqual(viewModel.phoneInput, "+44 7700 900123")
+        XCTAssertTrue(viewModel.phoneIsValid)
+        await viewModel.submitPhone()
+        XCTAssertEqual(viewModel.phoneE164, "+447700900123")
+    }
+
+    func testBackFromCodeStepClearsItsError() async {
+        let environment = freshEnvironment(signedIn: false)
+        let viewModel = OnboardingViewModel(environment: environment)
+        viewModel.phoneInput = "07700900001"
+        await viewModel.submitPhone()
+        viewModel.code = "000000"
+        await viewModel.submitCode()
+        XCTAssertNotNil(viewModel.error)
+        XCTAssertEqual(viewModel.attemptsRemaining, 4)
+        viewModel.resetCodeStep()
+        XCTAssertNil(viewModel.error)
+        XCTAssertNil(viewModel.attemptsRemaining)
+        XCTAssertEqual(viewModel.code, "")
+    }
+
+    func testLinkingAfterSkipDoesNotReopenOnboarding() async {
+        let environment = freshEnvironment(signedIn: true)
+        MockFixtures.state.bankLinked = false
+        await environment.loadProfile()
+        environment.markBankLinkSkipped()
+        XCTAssertNil(environment.pendingOnboardingStep)
+
+        MockFixtures.state.bankLinked = true
+        await environment.bankAccountLinked()
+        XCTAssertNotNil(environment.profile?.bankAccount)
+        XCTAssertFalse(environment.bankLinkSkipped)
+        XCTAssertNil(environment.pendingOnboardingStep)
+    }
+
+    func testSessionEndingDuringOnboardingReturnsToWelcome() async throws {
+        let environment = freshEnvironment(signedIn: true)
+        MockFixtures.state.displayName = ""
+        await environment.loadProfile()
+        environment.startOnboarding()
+        let viewModel = OnboardingViewModel(environment: environment)
+        XCTAssertEqual(viewModel.rootStep, .name)
+
+        MockServer.shared.register(.put, "/me", .json(#"{"error":"unauthorized","message":"Session expired"}"#, status: 401))
+        viewModel.displayName = "Sam Okafor"
+        await viewModel.submitName()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertFalse(environment.session.isSignedIn)
+        XCTAssertFalse(environment.onboardingInProgress)
+        XCTAssertNil(environment.profile)
+        XCTAssertFalse(environment.contactsExplainerSeen)
+    }
+
     func testSignOutClearsSessionAndFlags() async {
         let environment = freshEnvironment(signedIn: true)
         await environment.loadProfile()

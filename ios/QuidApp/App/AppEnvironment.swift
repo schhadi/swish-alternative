@@ -43,25 +43,28 @@ final class AppEnvironment {
             return demo(signedIn: !MockMode.startsSignedOut)
         }
         let store = KeychainTokenStore()
-        let session = SessionStore(store: store)
-        return AppEnvironment(
-            api: APIClient(baseURL: AppConfig.apiBaseURL, tokenStore: store, onUnauthorized: sessionEnder(session)),
-            session: session,
+        let relay = SessionEndRelay()
+        let environment = AppEnvironment(
+            api: APIClient(baseURL: AppConfig.apiBaseURL, tokenStore: store, onUnauthorized: { relay.fire() }),
+            session: SessionStore(store: store),
             isMock: false
         )
+        relay.attach(environment)
+        return environment
     }
 
     /// Canned data. `signedIn` = an existing, fully onboarded demo user; otherwise the welcome screen with a fresh mock user.
     static func demo(signedIn: Bool = true, defaults: UserDefaults = .standard) -> AppEnvironment {
         let store = InMemoryTokenStore(token: signedIn ? MockMode.sessionToken : nil)
         MockServer.shared.reset(signedIn: signedIn)
-        let session = SessionStore(store: store)
+        let relay = SessionEndRelay()
         let environment = AppEnvironment(
-            api: .mock(tokenStore: store, onUnauthorized: sessionEnder(session)),
-            session: session,
+            api: .mock(tokenStore: store, onUnauthorized: { relay.fire() }),
+            session: SessionStore(store: store),
             isMock: true,
             defaults: defaults
         )
+        relay.attach(environment)
         if signedIn {
             environment.markDemoUserOnboarded()
         } else {
@@ -70,18 +73,14 @@ final class AppEnvironment {
         return environment
     }
 
-    /// Any authenticated call answered with 401 ends the session everywhere: RootView then shows Welcome.
-    private static func sessionEnder(_ session: SessionStore) -> @Sendable () -> Void {
-        { Task { @MainActor in session.signOut() } }
-    }
-
     /// Switches a live build into the demo ("Explore the demo" on the welcome screen).
     func enterDemoMode() {
         let store = InMemoryTokenStore(token: MockMode.sessionToken)
         MockServer.shared.reset(signedIn: true)
-        let demoSession = SessionStore(store: store)
-        api = .mock(tokenStore: store, onUnauthorized: AppEnvironment.sessionEnder(demoSession))
-        session = demoSession
+        let relay = SessionEndRelay()
+        api = .mock(tokenStore: store, onUnauthorized: { relay.fire() })
+        relay.attach(self)
+        session = SessionStore(store: store)
         isMock = true
         profile = nil
         profileError = nil
@@ -111,8 +110,7 @@ final class AppEnvironment {
             return
         } catch let appError as AppError {
             if appError == .unauthorized {
-                session.signOut()
-                profile = nil
+                sessionEnded()
             }
             profileError = appError
         } catch {
@@ -162,14 +160,23 @@ final class AppEnvironment {
         defaults.set(true, forKey: Keys.bankLinkSkipped)
     }
 
-    /// After a bank account is linked from Home or Me, the skip no longer applies.
-    func bankAccountLinked() {
+    /// After a bank account is linked (onboarding, Home or Me). The profile is refreshed first and the skip flag only
+    /// cleared once it shows the account, so RootView never sees "no bank, not skipped" and reopens the bank step.
+    func bankAccountLinked() async {
+        await loadProfile()
+        guard profile?.bankAccount != nil else { return }
         bankLinkSkipped = false
         defaults.set(false, forKey: Keys.bankLinkSkipped)
     }
 
     func signOut() async {
         _ = try? await api.send(API.logout())
+        sessionEnded()
+    }
+
+    /// The token is no longer valid (sign-out, expiry, logged out elsewhere, account deleted): forget the account on this
+    /// device, including a half-finished onboarding, so RootView shows Welcome and nothing leaks to the next account.
+    func sessionEnded() {
         session.signOut()
         profile = nil
         profileError = nil
@@ -184,6 +191,21 @@ final class AppEnvironment {
         bankLinkSkipped = false
         defaults.removeObject(forKey: Keys.contactsExplainerSeen)
         defaults.removeObject(forKey: Keys.bankLinkSkipped)
+    }
+}
+
+/// Hands APIClient's 401 callback to the environment it belongs to. The client is created before the environment
+/// exists, so the relay is attached one step later; it only ever calls into the environment on the main actor.
+private final class SessionEndRelay: @unchecked Sendable {
+    private weak var environment: AppEnvironment?
+
+    @MainActor
+    func attach(_ environment: AppEnvironment) {
+        self.environment = environment
+    }
+
+    func fire() {
+        Task { @MainActor [weak self] in self?.environment?.sessionEnded() }
     }
 }
 

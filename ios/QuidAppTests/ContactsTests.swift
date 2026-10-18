@@ -20,6 +20,21 @@ final class ContactsTests: XCTestCase {
         XCTAssertEqual(UKPhone.masked("+447700900123"), "+44 7700 ***123")
     }
 
+    func testInternationalInputKeepsEveryDigit() {
+        // A pasted or autofilled "+44…" must never be cut to 11 digits: that produced a different, valid number.
+        XCTAssertEqual(UKPhone.formatNationalAsTyped("+447700900123"), "+44 7700 900123")
+        XCTAssertEqual(UKPhone.formatNationalAsTyped("+44 7700 900123"), "+44 7700 900123")
+        XCTAssertEqual(UKPhone.formatNationalAsTyped("0044 7700 900123"), "+44 7700 900123")
+        XCTAssertEqual(UKPhone.formatNationalAsTyped("447700900123"), "+44 7700 900123")
+        XCTAssertEqual(UKPhone.formatNationalAsTyped("+44"), "+44")
+        XCTAssertEqual(UKPhone.formatNationalAsTyped("+447"), "+44 7")
+        XCTAssertEqual(UKPhone.formatNationalAsTyped("+1555"), "+1555")
+        XCTAssertNil(UKPhone.normalise(UKPhone.formatNationalAsTyped("+1555")))
+        for input in ["+447700900123", "0044 7700 900123", "447700900123", "+44 7700 900123"] {
+            XCTAssertEqual(UKPhone.normalise(UKPhone.formatNationalAsTyped(input)), "+447700900123", input)
+        }
+    }
+
     func testClientHashMatchesSharedVector() {
         // Same vector as backend/test/phoneHash.test.ts
         XCTAssertEqual(PhoneHasher.clientHash("+447700900123"), "a8acc3a90a7b4e4dc65e93db9240ed26523050ef754d63b75b5161de76781436")

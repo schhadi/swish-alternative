@@ -35,9 +35,28 @@ enum UKPhone {
         return "+44 \(national.prefix(4)) \(national.dropFirst(4))"
     }
 
-    /// Formats the national number as the user types it: "07700900123" -> "07700 900123". Keeps digits only.
+    /// Formats the number as the user types it. National input keeps digits only, at most 11: "07700900123" ->
+    /// "07700 900123". International input ("+44…", "0044…", "44…", as autofill and pasting produce) keeps the
+    /// country code instead of being cut to 11 digits, which would silently turn it into a different valid number:
+    /// "+447700900123" -> "+44 7700 900123". `normalise` accepts both shapes.
     static func formatNationalAsTyped(_ raw: String) -> String {
-        let digits = String(raw.filter(\.isNumber).prefix(11))
+        var digits = raw.filter(\.isNumber)
+        var international = raw.trimmingCharacters(in: .whitespaces).hasPrefix("+")
+        if digits.hasPrefix("0044") {
+            digits = String(digits.dropFirst(2))
+            international = true
+        }
+        // UK national numbers start with 0, so a leading 44 can only be the country code.
+        if digits.hasPrefix("44") { international = true }
+        if international {
+            // Only +44 is accepted, but never drop digits: `normalise` rejects everything else.
+            guard digits.hasPrefix("44") else { return "+" + digits }
+            let national = String(digits.dropFirst(2).prefix(10))
+            if national.isEmpty { return "+44" }
+            if national.count <= 4 { return "+44 " + national }
+            return "+44 \(national.prefix(4)) \(national.dropFirst(4))"
+        }
+        digits = String(digits.prefix(11))
         guard digits.count > 5 else { return digits }
         return "\(digits.prefix(5)) \(digits.dropFirst(5))"
     }

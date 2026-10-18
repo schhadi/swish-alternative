@@ -2,8 +2,9 @@ import SwiftUI
 
 /// Sort code, account number, name on the account and the bank. Used in onboarding and from Home / Me.
 struct BankAccountFormView: View {
+    /// onboarding: first link with a skip; link: first link from Home or Me; change: replacing an existing account.
     enum Mode {
-        case onboarding, change
+        case onboarding, link, change
     }
 
     @Bindable var viewModel: BankLinkViewModel
@@ -20,7 +21,7 @@ struct BankAccountFormView: View {
 
     var body: some View {
         OnboardingPage(
-            title: mode == .onboarding ? "Link your bank account" : "Change your bank account",
+            title: mode == .change ? "Change your bank account" : "Link your bank account",
             subtitle: "The account you'll receive money into. We confirm the name with your bank before saving anything."
         ) {
             VStack(alignment: .leading, spacing: 16) {
@@ -92,11 +93,18 @@ struct BankAccountFormView: View {
             .disabled(!viewModel.isValid)
             .accessibilityIdentifier("bank.verify")
             if mode == .onboarding, let onSkip {
-                Button("I'll do this later") { onSkip() }
-                    .font(.quidSubheadline)
-                    .tint(Color.quidAccentText)
-                    .frame(minHeight: 44)
-                    .accessibilityIdentifier("bank.skip")
+                // Frame and hit shape inside the label so the whole 44pt row is tappable.
+                Button {
+                    onSkip()
+                } label: {
+                    Text("I'll do this later")
+                        .font(.quidSubheadline)
+                        .foregroundStyle(Color.quidAccentText)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("bank.skip")
             }
         }
         .sheet(isPresented: $showProviderPicker) {
@@ -126,6 +134,8 @@ struct ProviderTile: View {
                 Text(Avatar.initials(for: name))
                     .font(.quid(.bold, size: 12, relativeTo: .caption))
                     .foregroundStyle(Color.quidAccentText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.4)
             } else {
                 Image(systemName: "building.columns")
                     .font(.system(size: 13, weight: .semibold))

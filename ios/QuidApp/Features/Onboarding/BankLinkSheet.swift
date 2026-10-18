@@ -17,7 +17,7 @@ struct BankLinkSheet: View {
         NavigationStack {
             BankAccountFormView(
                 viewModel: viewModel,
-                mode: .change,
+                mode: appEnvironment.profile?.bankAccount == nil ? .link : .change,
                 onSubmit: {
                     if await viewModel.submit() {
                         showResult = true
@@ -28,7 +28,7 @@ struct BankLinkSheet: View {
                 CopResultView(
                     bankLink: viewModel,
                     onContinue: {
-                        appEnvironment.bankAccountLinked()
+                        await appEnvironment.bankAccountLinked()
                         await onLinked()
                         dismiss()
                     },

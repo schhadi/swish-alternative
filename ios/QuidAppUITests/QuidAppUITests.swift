@@ -48,7 +48,8 @@ final class QuidAppUITests: XCTestCase {
 
         let code = app.textFields["onboarding.code"]
         waitFor(code, in: app, timeout: 10)
-        code.tap()
+        // The field is focused on appear and sits under the six boxes, so type without tapping it.
+        _ = app.keyboards.firstMatch.waitForExistence(timeout: 5)
         code.typeText("123456")
 
         let name = app.textFields["onboarding.name"]

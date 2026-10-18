@@ -20,8 +20,13 @@ final class OnboardingViewModel {
     private(set) var phoneE164: String?
 
     // Code
+    // Every self-assigning observer is guarded: on an @Observable class the observer sits on the backing storage and an
+    // unguarded reassignment re-enters the public setter without end (docs/DECISIONS.md #52).
     var code = "" {
-        didSet { code = String(code.filter(\.isNumber).prefix(6)) }
+        didSet {
+            let cleaned = String(code.filter(\.isNumber).prefix(6))
+            if cleaned != code { code = cleaned }
+        }
     }
     private(set) var attemptsRemaining: Int?
     private(set) var isLocked = false
@@ -97,10 +102,16 @@ final class OnboardingViewModel {
         return resendAvailableAt <= Date()
     }
 
-    func changeNumber() {
+    /// Clears everything the code step showed, so the phone step never displays a stale OTP error.
+    func resetCodeStep() {
         code = ""
         error = nil
         isLocked = false
+        attemptsRemaining = nil
+    }
+
+    func changeNumber() {
+        resetCodeStep()
         if !path.isEmpty { path.removeLast() }
     }
 
@@ -166,8 +177,7 @@ final class OnboardingViewModel {
     }
 
     func continueAfterBank() async {
-        environment.bankAccountLinked()
-        await environment.loadProfile()
+        await environment.bankAccountLinked()
         path.append(.contacts)
     }
 

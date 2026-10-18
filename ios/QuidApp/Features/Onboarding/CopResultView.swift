@@ -7,6 +7,7 @@ struct CopResultView: View {
     let onUseSuggested: () async -> Void
     let onEdit: () -> Void
     var onSkip: (() -> Void)? = nil
+    @State private var isContinuing = false
 
     var body: some View {
         Group {
@@ -19,8 +20,16 @@ struct CopResultView: View {
                     message: "\(bankLink.result?.bankAccount?.bankName ?? "Your bank") confirmed this account is held in the name \(bankLink.trimmedName). You're set up to get paid.",
                     primaryTitle: "Continue",
                     primaryIdentifier: "cop.continue",
-                    isLoading: false,
-                    primary: { Task { await onContinue() } }
+                    isLoading: isContinuing,
+                    errorMessage: bankLink.error?.userMessage,
+                    primary: {
+                        guard !isContinuing else { return }
+                        isContinuing = true
+                        Task {
+                            await onContinue()
+                            isContinuing = false
+                        }
+                    }
                 )
             case .closeMatch:
                 ResultPage(
@@ -31,6 +40,7 @@ struct CopResultView: View {
                     primaryTitle: "Use \u{201C}\(bankLink.result?.suggestedAccountHolderName ?? "that name")\u{201D}",
                     primaryIdentifier: "cop.useSuggested",
                     isLoading: bankLink.isSubmitting,
+                    errorMessage: bankLink.error?.userMessage,
                     primary: { Task { await onUseSuggested() } },
                     secondaryTitle: "Edit details",
                     secondary: onEdit
@@ -44,6 +54,7 @@ struct CopResultView: View {
                     primaryTitle: "Edit details",
                     primaryIdentifier: "cop.edit",
                     isLoading: false,
+                    errorMessage: bankLink.error?.userMessage,
                     primary: onEdit,
                     secondaryTitle: onSkip == nil ? nil : "I'll do this later",
                     secondary: onSkip
@@ -63,6 +74,8 @@ private struct ResultPage: View {
     let primaryTitle: String
     let primaryIdentifier: String
     let isLoading: Bool
+    /// A failed re-verification ("Use that name" offline, the hourly cap) must say so on this screen.
+    var errorMessage: String? = nil
     let primary: () -> Void
     var secondaryTitle: String? = nil
     var secondary: (() -> Void)? = nil
@@ -86,6 +99,9 @@ private struct ResultPage: View {
                     .font(.quidBody)
                     .foregroundStyle(Color.quidMuted)
                     .multilineTextAlignment(.center)
+                if let errorMessage {
+                    QuidErrorLine(message: errorMessage)
+                }
             }
             .padding(.horizontal, 24)
             Spacer()

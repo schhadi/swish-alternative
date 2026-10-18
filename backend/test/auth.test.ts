@@ -154,6 +154,32 @@ describe("auth", () => {
     }
   });
 
+  it("keys the per-IP cap on X-Forwarded-For only when TRUST_PROXY is set", async () => {
+    const bad = (forwardedFor: string) => ({
+      method: "POST" as const,
+      url: "/auth/otp/verify",
+      remoteAddress: "10.0.0.1",
+      headers: { "x-forwarded-for": forwardedFor },
+      payload: { phone: PHONE, code: "12" },
+    });
+    const untrusting = await createTestApp({ authRequestsPerMinutePerIp: 1 });
+    try {
+      expect((await untrusting.app.inject(bad("203.0.113.5"))).statusCode).toBe(400);
+      // Same socket, different header: still one bucket, because the header is not trusted.
+      expect((await untrusting.app.inject(bad("203.0.113.6"))).statusCode).toBe(429);
+    } finally {
+      await untrusting.app.close();
+    }
+    const trusting = await createTestApp({ authRequestsPerMinutePerIp: 1, trustProxy: 1 });
+    try {
+      expect((await trusting.app.inject(bad("203.0.113.5"))).statusCode).toBe(400);
+      expect((await trusting.app.inject(bad("203.0.113.6"))).statusCode).toBe(400);
+      expect((await trusting.app.inject(bad("203.0.113.5"))).statusCode).toBe(429);
+    } finally {
+      await trusting.app.close();
+    }
+  });
+
   it("validates the code shape before touching the database", async () => {
     const response = await ctx.app.inject({ method: "POST", url: "/auth/otp/verify", payload: { phone: PHONE, code: "12" } });
     expect(response.statusCode).toBe(400);

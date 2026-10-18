@@ -7,11 +7,18 @@ import Observation
 final class BankLinkViewModel {
     /// Digits only; the view formats them as 00-00-00.
     var sortCode = "" {
-        didSet { sortCode = String(sortCode.filter(\.isNumber).prefix(6)) }
+        didSet {
+            // Guarded self-assignment; see OnboardingViewModel.code and docs/DECISIONS.md #52.
+            let cleaned = String(sortCode.filter(\.isNumber).prefix(6))
+            if cleaned != sortCode { sortCode = cleaned }
+        }
     }
     /// Digits only, 8 of them.
     var accountNumber = "" {
-        didSet { accountNumber = String(accountNumber.filter(\.isNumber).prefix(8)) }
+        didSet {
+            let cleaned = String(accountNumber.filter(\.isNumber).prefix(8))
+            if cleaned != accountNumber { accountNumber = cleaned }
+        }
     }
     var accountHolderName = ""
     var selectedProvider: ProviderDTO?

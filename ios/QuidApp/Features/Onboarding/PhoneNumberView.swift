@@ -31,7 +31,7 @@ struct PhoneNumberView: View {
             }
             .disabled(!viewModel.phoneIsValid)
             .accessibilityIdentifier("onboarding.sendCode")
-            Text("By continuing you agree to our Terms of use and Privacy policy.")
+            Text(PhoneNumberView.legalNotice)
                 .font(.quidFootnote)
                 .foregroundStyle(Color.quidMuted)
                 .multilineTextAlignment(.center)
@@ -47,4 +47,10 @@ struct PhoneNumberView: View {
         }
         .onAppear { isFocused = true }
     }
+
+    /// Markdown links open the two documents in Safari; the link colour is the flow's tint.
+    private static let legalNotice: AttributedString = {
+        let markdown = "By continuing you agree to our [Terms of use](\(AppConfig.termsURL.absoluteString)) and [Privacy policy](\(AppConfig.privacyURL.absoluteString))."
+        return (try? AttributedString(markdown: markdown)) ?? AttributedString("By continuing you agree to our Terms of use and Privacy policy.")
+    }()
 }
