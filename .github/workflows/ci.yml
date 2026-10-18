@@ -65,6 +65,24 @@ jobs:
             echo "::endgroup::"
           fi
           exit $STATUS
+      - name: Crash reports and simulator log
+        if: failure()
+        run: |
+          ls -t ~/Library/Logs/DiagnosticReports 2>/dev/null | head -20 || true
+          for f in $(ls -t ~/Library/Logs/DiagnosticReports/QuidApp*.ips 2>/dev/null | head -2); do
+            echo "::group::$f"
+            head -c 8000 "$f"
+            echo
+            echo "::endgroup::"
+          done
+          UDID=$(xcrun simctl list devices booted -j | jq -r '[.devices[][] | select(.state=="Booted")][0].udid // empty')
+          if [ -n "$UDID" ]; then
+            echo "::group::Simulator log lines for QuidApp (last 20 minutes)"
+            xcrun simctl spawn "$UDID" log show --last 20m --style compact \
+              --predicate 'process == "QuidApp" OR (process == "SpringBoard" AND eventMessage CONTAINS "QuidApp")' 2>/dev/null \
+              | grep -iE "fatal|crash|exception|terminat|watchdog|killed|error" | tail -100 || true
+            echo "::endgroup::"
+          fi
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4

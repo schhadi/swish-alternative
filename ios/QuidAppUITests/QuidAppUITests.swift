@@ -9,7 +9,8 @@ final class QuidAppUITests: XCTestCase {
     /// Waits for the element and, when it never appears, prints the whole hierarchy so CI logs show what was on screen.
     private func waitFor(_ element: XCUIElement, in app: XCUIApplication, timeout: TimeInterval = 20, file: StaticString = #filePath, line: UInt = #line) {
         if element.waitForExistence(timeout: timeout) { return }
-        print("UITEST-HIERARCHY-BEGIN\n\(app.debugDescription)\nUITEST-HIERARCHY-END")
+        // state: 1 = not running (the app crashed or was killed), 4 = running in the foreground.
+        print("UITEST-HIERARCHY-BEGIN\napp.state=\(app.state.rawValue)\n\(app.debugDescription)\nUITEST-HIERARCHY-END")
         XCTFail("\(element) did not appear within \(Int(timeout))s", file: file, line: line)
     }
 
