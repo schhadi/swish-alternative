@@ -170,7 +170,57 @@ struct HealthDTO: Codable, Sendable {
     let version: String
 }
 
+struct ErrorDetailsDTO: Codable, Sendable {
+    let attemptsRemaining: Int?
+}
+
 struct ErrorBodyDTO: Codable, Sendable {
     let error: String
     let message: String?
+    let details: ErrorDetailsDTO?
+}
+
+// MARK: - Phase 1: auth, onboarding, directory
+
+struct OtpStartResponseDTO: Codable, Sendable {
+    let phoneE164: String
+    let expiresInSeconds: Int
+}
+
+struct OtpVerifyResponseDTO: Codable, Sendable {
+    let token: String
+    let user: UserDTO
+    let isNew: Bool
+}
+
+struct UserEnvelopeDTO: Codable, Sendable {
+    let user: UserDTO
+}
+
+/// Result of PUT /me/bank-account. Only MATCH carries a stored account.
+struct BankAccountLinkResponseDTO: Codable, Sendable {
+    let copStatus: CopStatus
+    let suggestedAccountHolderName: String?
+    let bankAccount: BankAccountSummaryDTO?
+}
+
+struct ProviderDTO: Codable, Hashable, Identifiable, Sendable {
+    let id: String
+    let displayName: String
+    let logoUrl: String?
+}
+
+struct ProviderListDTO: Codable, Sendable {
+    let providers: [ProviderDTO]
+}
+
+struct RegisteredContactDTO: Codable, Hashable, Sendable {
+    let hash: String
+    let userId: String
+    let displayName: String
+    let firstInitials: String
+}
+
+struct DirectoryLookupResponseDTO: Codable, Sendable {
+    let registered: [RegisteredContactDTO]
 }

@@ -4,7 +4,8 @@ import SwiftUI
 struct MeView: View {
     @Environment(AppEnvironment.self) private var appEnvironment
     @State private var viewModel: MeViewModel
-    @State private var placeholder: PhasePlaceholder?
+    @State private var showChangeBankWarning = false
+    @State private var showBankSheet = false
     @State private var showDeleteConfirmation = false
     @AppStorage("notificationsEnabled") private var notificationsEnabled = true
 
@@ -50,7 +51,7 @@ struct MeView: View {
                 Button("Delete account", role: .destructive) {
                     Task {
                         if await viewModel.deleteAccount() {
-                            appEnvironment.session.signOut()
+                            await appEnvironment.signOut()
                         }
                     }
                 }
@@ -64,7 +65,16 @@ struct MeView: View {
                 Text(viewModel.deleteError?.userMessage ?? "")
             }
         }
-        .sheet(item: $placeholder) { PhasePlaceholderSheet(placeholder: $0) }
+        .alert("Change your bank account?", isPresented: $showChangeBankWarning) {
+            Button("Continue") { showBankSheet = true }
+            Button("Not now", role: .cancel) {}
+        } message: {
+            Text("After you change the account you receive into, you won't be able to receive payments for 24 hours. Anyone trying to pay you will see this too.")
+        }
+        .sheet(isPresented: $showBankSheet) {
+            BankLinkSheet(api: appEnvironment.api) { await viewModel.load() }
+                .environment(appEnvironment)
+        }
     }
 
     private var deleteErrorPresented: Binding<Bool> {
@@ -124,13 +134,20 @@ struct MeView: View {
                         }
                         QuidDivider().padding(.leading, 58)
                         Button {
-                            placeholder = .changeBank
+                            showChangeBankWarning = true
                         } label: {
                             MeRow(systemImage: "arrow.triangle.2.circlepath", title: "Change bank account", accessory: .chevron)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("me.changeBank")
                     } else if viewModel.me != nil {
-                        MeRow(systemImage: "building.columns", title: "No bank linked yet")
+                        Button {
+                            showBankSheet = true
+                        } label: {
+                            MeRow(systemImage: "building.columns", title: "Link your bank account", accessory: .chevron)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("me.linkBank")
                     } else {
                         MeRow(systemImage: "building.columns", title: "Loading")
                             .redacted(reason: .placeholder)
@@ -198,7 +215,7 @@ struct MeView: View {
         QuidCard(padding: 0) {
             VStack(spacing: 0) {
                 Button {
-                    appEnvironment.session.signOut()
+                    Task { await appEnvironment.signOut() }
                 } label: {
                     Text("Sign out")
                         .font(.quidBody)

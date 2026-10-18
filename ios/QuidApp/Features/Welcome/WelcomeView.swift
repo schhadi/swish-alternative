@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Shown when there is no session. Phase 1 replaces "Get started" with the phone-number onboarding.
+/// Shown when there is no session. "Get started" begins onboarding with the phone number.
 struct WelcomeView: View {
     @Environment(AppEnvironment.self) private var appEnvironment
 
@@ -24,14 +24,14 @@ struct WelcomeView: View {
             }
             Spacer()
             VStack(spacing: 12) {
-                QuidButton(title: "Get started") {}
-                    .disabled(true)
-                Text("Signing up with your phone number arrives in Phase 1.")
-                    .font(.quidFootnote)
-                    .foregroundStyle(Color.quidMuted)
-                    .multilineTextAlignment(.center)
-                QuidButton(title: "Explore the demo", style: .secondary) {
-                    appEnvironment.enterDemoMode()
+                QuidButton(title: "Get started") {
+                    appEnvironment.startOnboarding()
+                }
+                .accessibilityIdentifier("welcome.getStarted")
+                if !appEnvironment.isMock {
+                    QuidButton(title: "Explore the demo", style: .secondary) {
+                        appEnvironment.enterDemoMode()
+                    }
                 }
             }
         }
@@ -62,5 +62,5 @@ private struct WelcomeFeatureRow: View {
 
 #Preview("Welcome") {
     WelcomeView()
-        .environment(AppEnvironment.demo())
+        .environment(AppEnvironment.demo(signedIn: false))
 }

@@ -23,12 +23,13 @@ describe("logger redaction", () => {
     logger.info({ phone: "+447700900123", sortCode: "123456", accountNumber: "12345678" }, "top level");
     logger.info({ user: { phone: "+447700900123", phoneE164: "+447700900123" }, session: { token: "abc" } }, "nested");
     logger.info({ req: { body: { phone: "+447700900123", code: "123456", sortCode: "123456" } } }, "request body");
-    logger.info({ otp: { code: "123456" } }, "otp");
-    const [top, nested, body, otp] = lines();
+    // The dev OTP line (spec section 5: "dev mode: code is logged") must stay readable.
+    logger.info({ sms: { to: "+44 7700 ***123", body: "Your Quid code is 123456" } }, "sms");
+    const [top, nested, body, sms] = lines();
     expect(top).toMatchObject({ phone: "[redacted]", sortCode: "[redacted]", accountNumber: "[redacted]" });
     expect(nested).toMatchObject({ user: { phone: "[redacted]", phoneE164: "[redacted]" }, session: { token: "[redacted]" } });
     expect(body).toMatchObject({ req: { body: { phone: "[redacted]", code: "[redacted]", sortCode: "[redacted]" } } });
-    expect(otp).toMatchObject({ otp: { code: "[redacted]" } });
+    expect(sms).toMatchObject({ sms: { body: "Your Quid code is 123456" } });
     expect(JSON.stringify(lines())).not.toContain("+447700900123");
   });
 

@@ -1,25 +1,129 @@
 import Foundation
 
+/// Mutable profile the mock backend serves, so the onboarding flow can be exercised end to end without a server.
+final class MockProfileState: @unchecked Sendable {
+    var displayName = "Sam Okafor"
+    var bankLinked = true
+    var providerId: String? = "ob-monzo"
+    var otpAttemptsRemaining = 5
+    var hasSignedIn = true
+
+    /// `complete` = an existing user with name and bank (the demo); otherwise a brand-new user.
+    func reset(complete: Bool) {
+        displayName = complete ? "Sam Okafor" : ""
+        bankLinked = complete
+        providerId = complete ? "ob-monzo" : nil
+        otpAttemptsRemaining = 5
+        hasSignedIn = complete
+    }
+
+    var isComplete: Bool {
+        !displayName.isEmpty && bankLinked
+    }
+}
+
 /// Canned backend responses for MockMode. Dates are relative to now so "Today" / "Yesterday" grouping stays realistic.
 /// Realistic placeholder data only — no lorem ipsum.
 enum MockFixtures {
     static let meUserId = "u_me"
+    static let state = MockProfileState()
 
     static func defaultRoutes() -> [String: MockResponse] {
         [
             "GET /health": .json(#"{"status":"ok","service":"quid-backend","version":"0.1.0"}"#),
-            "GET /me": .json(me()),
             "DELETE /me": .empty(),
-            "GET /payments?role=sent&limit=50": .json(payments(sentPayments)),
-            "GET /payments?role=received&limit=50": .json(payments(receivedPayments)),
-            "GET /payments": .json(payments(sentPayments + receivedPayments)),
+            "POST /auth/logout": .empty(),
             "GET /payments/p_1001": .json(sentPayments[0]),
-            "GET /requests?role=incoming": .json(incomingRequests()),
-            "GET /requests": .json(incomingRequests()),
-            "GET /orgs": .json(organisations()),
+            "GET /providers": .json(providers()),
             "GET /orgs/org_hockey/collections/col_trip": .json(tripCollectionDetail()),
             "GET /orgs/org_hockey/collections/col_kit": .json(kitCollectionDetail()),
             "GET /orgs/org_flat/collections/col_bills": .json(billsCollectionDetail()),
+        ]
+    }
+
+    /// Routes that read the request or keep state. They run under the MockServer lock.
+    static func defaultHandlers() -> [String: MockHandler] {
+        [
+            "GET /me": { _ in .json(me()) },
+            "GET /payments": { request in
+                guard state.hasSignedIn, state.isComplete else { return .json(payments([])) }
+                if request.query?.contains("role=received") == true { return .json(payments(receivedPayments)) }
+                if request.query?.contains("role=sent") == true { return .json(payments(sentPayments)) }
+                return .json(payments(sentPayments + receivedPayments))
+            },
+            "GET /requests": { _ in .json(state.isComplete ? incomingRequests() : #"{"requests":[]}"#) },
+            "GET /orgs": { _ in .json(state.isComplete ? organisations() : #"{"organisations":[]}"#) },
+            "POST /auth/otp/start": { request in
+                guard let body = request.decode(OtpStartRequest.self), let e164 = UKPhone.normalise(body.phone) else {
+                    return .json(#"{"error":"invalid_phone","message":"Enter a UK mobile number, like 07700 900123."}"#, status: 400)
+                }
+                state.otpAttemptsRemaining = 5
+                return .json(#"{"phoneE164":"\#(e164)","expiresInSeconds":300}"#)
+            },
+            "POST /auth/otp/verify": { request in
+                guard let body = request.decode(OtpVerifyRequest.self) else {
+                    return .json(#"{"error":"validation_error","message":"Request failed validation"}"#, status: 400)
+                }
+                if body.code == MockMode.otpCode {
+                    let isNew = !state.hasSignedIn
+                    state.hasSignedIn = true
+                    return .json(#"{"token":"\#(MockMode.sessionToken)","user":\#(user()),"isNew":\#(isNew)}"#)
+                }
+                state.otpAttemptsRemaining = max(0, state.otpAttemptsRemaining - 1)
+                if state.otpAttemptsRemaining == 0 {
+                    return .json(#"{"error":"otp_locked","message":"Too many attempts. Request a new code.","details":{"attemptsRemaining":0}}"#, status: 429)
+                }
+                let remaining = state.otpAttemptsRemaining
+                let noun = remaining == 1 ? "attempt" : "attempts"
+                return .json(#"{"error":"otp_invalid","message":"That code isn't right. \#(remaining) \#(noun) left.","details":{"attemptsRemaining":\#(remaining)}}"#, status: 400)
+            },
+            "PUT /me": { request in
+                guard let body = request.decode(DisplayNameRequest.self) else {
+                    return .json(#"{"error":"validation_error","message":"Request failed validation"}"#, status: 400)
+                }
+                let trimmed = body.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard trimmed.count >= 2, trimmed.count <= 40 else {
+                    return .json(#"{"error":"validation_error","message":"Enter at least 2 characters"}"#, status: 400)
+                }
+                state.displayName = trimmed
+                return .json(#"{"user":\#(user())}"#)
+            },
+            "PUT /me/bank-account": { request in
+                guard let body = request.decode(BankAccountRequest.self) else {
+                    return .json(#"{"error":"validation_error","message":"Request failed validation"}"#, status: 400)
+                }
+                let sortCode = body.sortCode.filter(\.isNumber)
+                let name = body.accountHolderName.trimmingCharacters(in: .whitespaces)
+                // Fixtures: sort code 999999 -> NO_MATCH; an all-lowercase name -> CLOSE_MATCH with the bank's capitalised version.
+                if sortCode == "999999" {
+                    return .json(#"{"copStatus":"NO_MATCH"}"#)
+                }
+                if name == name.lowercased() {
+                    return .json(#"{"copStatus":"CLOSE_MATCH","suggestedAccountHolderName":"\#(name.capitalized)"}"#)
+                }
+                state.bankLinked = true
+                state.providerId = body.providerId
+                return .json(#"{"copStatus":"MATCH","bankAccount":\#(bankAccount())}"#)
+            },
+            "POST /directory/lookup": { request in
+                guard let body = request.decode(DirectoryLookupRequest.self) else {
+                    return .json(#"{"error":"validation_error","message":"Request failed validation"}"#, status: 400)
+                }
+                let known: [(phone: String, userId: String, name: String)] = [
+                    ("+447700900002", "u_priya", "Priya Patel"),
+                    ("+447700900003", "u_tom", "Tom Whitfield"),
+                    ("+447700900004", "u_amara", "Amara Osei"),
+                    ("+447700900005", "u_jonas", "Jonas Berg"),
+                ]
+                let wanted = Set(body.hashes)
+                let entries = known.compactMap { entry -> String? in
+                    let hash = PhoneHasher.clientHash(entry.phone)
+                    guard wanted.contains(hash) else { return nil }
+                    let initials = entry.name.split(separator: " ").prefix(2).compactMap { $0.first }.map(String.init).joined().uppercased()
+                    return #"{"hash":"\#(hash)","userId":"\#(entry.userId)","displayName":"\#(entry.name)","firstInitials":"\#(initials)"}"#
+                }
+                return .json(#"{"registered":[\#(entries.joined(separator: ","))]}"#)
+            },
         ]
     }
 
@@ -33,22 +137,24 @@ enum MockFixtures {
 
     // MARK: - /me
 
+    static func user() -> String {
+        """
+        {"id": "\(meUserId)", "phoneE164": "+447700900001", "displayName": "\(state.displayName)", "createdAt": "\(iso(daysAgo: 40))"}
+        """
+    }
+
+    static func bankAccount() -> String {
+        let bankName = providerName(state.providerId) ?? "Your bank"
+        return """
+        {"bankName": "\(bankName)", "providerId": \(jsonString(state.providerId)), "copStatus": "MATCH", "verifiedAt": "\(iso(daysAgo: 40))", "coolingOffUntil": null}
+        """
+    }
+
     static func me() -> String {
         """
         {
-          "user": {
-            "id": "\(meUserId)",
-            "phoneE164": "+447700900001",
-            "displayName": "Sam Okafor",
-            "createdAt": "\(iso(daysAgo: 40))"
-          },
-          "bankAccount": {
-            "bankName": "Monzo",
-            "providerId": "ob-monzo",
-            "copStatus": "MATCH",
-            "verifiedAt": "\(iso(daysAgo: 40))",
-            "coolingOffUntil": null
-          },
+          "user": \(user()),
+          "bankAccount": \(state.bankLinked ? bankAccount() : "null"),
           "limits": {
             "perPaymentMinor": 25000,
             "rolling24hMinor": 50000,
@@ -56,6 +162,24 @@ enum MockFixtures {
           }
         }
         """
+    }
+
+    // MARK: - Providers
+
+    static let providerList: [(id: String, name: String)] = [
+        ("ob-monzo", "Monzo"), ("ob-starling", "Starling"), ("ob-barclays", "Barclays"), ("ob-lloyds", "Lloyds"),
+        ("ob-halifax", "Halifax"), ("ob-natwest", "NatWest"), ("ob-hsbc", "HSBC"), ("ob-santander", "Santander"),
+        ("ob-nationwide", "Nationwide"), ("ob-revolut", "Revolut"), ("ob-tsb", "TSB"), ("ob-first-direct", "first direct"),
+        ("ob-chase", "Chase"), ("mock-payments-gb-redirect", "Mock Bank (sandbox)"),
+    ]
+
+    static func providerName(_ id: String?) -> String? {
+        providerList.first { $0.id == id }?.name
+    }
+
+    static func providers() -> String {
+        let items = providerList.map { #"{"id":"\#($0.id)","displayName":"\#($0.name)","logoUrl":null}"# }
+        return #"{"providers":[\#(items.joined(separator: ","))]}"#
     }
 
     // MARK: - Payments

@@ -21,7 +21,6 @@ export const SENSITIVE_FIELDS = [
 export const REDACT_PATHS: string[] = [
   "req.headers.authorization",
   "req.headers.cookie",
-  "otp.code",
   "req.body.code",
   ...SENSITIVE_FIELDS.flatMap((field) => [field, `*.${field}`, `req.body.${field}`]),
 ];

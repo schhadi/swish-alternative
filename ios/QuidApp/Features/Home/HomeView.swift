@@ -4,6 +4,8 @@ import SwiftUI
 struct HomeView: View {
     @State private var viewModel: HomeViewModel
     @State private var placeholder: PhasePlaceholder?
+    @State private var showBankSheet = false
+    @Environment(AppEnvironment.self) private var appEnvironment
     @ScaledMetric(relativeTo: .footnote) private var contactTileWidth: CGFloat = 72
     let showActivity: () -> Void
 
@@ -17,6 +19,9 @@ struct HomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     header
+                    if viewModel.me != nil, viewModel.me?.bankAccount == nil {
+                        linkBankPrompt
+                    }
                     actionButtons
                     if !viewModel.incomingRequests.isEmpty {
                         incomingRequestsSection
@@ -38,6 +43,10 @@ struct HomeView: View {
             .toolbar(.hidden, for: .navigationBar)
         }
         .sheet(item: $placeholder) { PhasePlaceholderSheet(placeholder: $0) }
+        .sheet(isPresented: $showBankSheet) {
+            BankLinkSheet(api: appEnvironment.api) { await viewModel.load() }
+                .environment(appEnvironment)
+        }
     }
 
     // MARK: - Header
@@ -95,6 +104,34 @@ struct HomeView: View {
             .font(.quidSubheadline)
             .foregroundStyle(Color.quidFailureText)
             .accessibilityElement(children: .combine)
+        }
+    }
+
+    /// Shown until a bank account is linked: without one, nobody can pay this user.
+    private var linkBankPrompt: some View {
+        QuidCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Image(systemName: "building.columns")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.quidAccentText)
+                        .frame(width: 36, height: 36)
+                        .background(Color.quidSuccessTint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Link your bank to get paid")
+                            .font(.quidHeadline)
+                            .foregroundStyle(Color.quidInk)
+                        Text("Takes a minute. We check the name with your bank.")
+                            .font(.quidFootnote)
+                            .foregroundStyle(Color.quidMuted)
+                    }
+                }
+                QuidButton(title: "Link bank account", style: .secondary) {
+                    showBankSheet = true
+                }
+                .accessibilityIdentifier("home.linkBank")
+            }
         }
     }
 

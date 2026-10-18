@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Flows that land in a later phase (docs/SPEC.md section 9). Shown instead of dead buttons while Phase 0 is reviewed.
 enum PhasePlaceholder: String, Identifiable {
-    case pay, request, declineRequest, createCollection, remind, changeBank
+    case pay, request, declineRequest, createCollection, remind
 
     var id: String { rawValue }
 
@@ -13,13 +13,11 @@ enum PhasePlaceholder: String, Identifiable {
         case .declineRequest: return "Decline request"
         case .createCollection: return "New collection"
         case .remind: return "Remind"
-        case .changeBank: return "Change bank account"
         }
     }
 
     var phase: Int {
         switch self {
-        case .changeBank: return 1
         case .pay: return 2
         case .request, .declineRequest, .remind: return 3
         case .createCollection: return 4
@@ -38,8 +36,6 @@ enum PhasePlaceholder: String, Identifiable {
             return "Set up a collection for a club, society or flat, share a link or QR code and see who has paid. Built in Phase 4."
         case .remind:
             return "Reminders are rate-limited to once per 24 hours per person. Built in Phase 3 for requests and Phase 4 for collections."
-        case .changeBank:
-            return "Changing the account you receive into starts a 24-hour cooling-off during which you can't receive payments. Built in Phase 1."
         }
     }
 }

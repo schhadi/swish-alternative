@@ -74,4 +74,60 @@ enum API {
     static func collection(orgId: String, collectionId: String) -> Endpoint<CollectionDetailDTO> {
         Endpoint(method: .get, path: "/orgs/\(orgId)/collections/\(collectionId)")
     }
+
+    // MARK: Phase 1
+
+    static func otpStart(phone: String) -> Endpoint<OtpStartResponseDTO> {
+        Endpoint(method: .post, path: "/auth/otp/start", body: OtpStartRequest(phone: phone), requiresAuth: false)
+    }
+
+    static func otpVerify(phone: String, code: String) -> Endpoint<OtpVerifyResponseDTO> {
+        Endpoint(method: .post, path: "/auth/otp/verify", body: OtpVerifyRequest(phone: phone, code: code), requiresAuth: false)
+    }
+
+    static func logout() -> Endpoint<Empty> {
+        Endpoint(method: .post, path: "/auth/logout")
+    }
+
+    static func updateDisplayName(_ displayName: String) -> Endpoint<UserEnvelopeDTO> {
+        Endpoint(method: .put, path: "/me", body: DisplayNameRequest(displayName: displayName))
+    }
+
+    static func linkBankAccount(_ request: BankAccountRequest) -> Endpoint<BankAccountLinkResponseDTO> {
+        Endpoint(method: .put, path: "/me/bank-account", body: request)
+    }
+
+    static func providers() -> Endpoint<ProviderListDTO> {
+        Endpoint(method: .get, path: "/providers")
+    }
+
+    static func directoryLookup(hashes: [String]) -> Endpoint<DirectoryLookupResponseDTO> {
+        Endpoint(method: .post, path: "/directory/lookup", body: DirectoryLookupRequest(hashes: hashes))
+    }
+}
+
+// MARK: - Request bodies
+
+struct OtpStartRequest: Encodable, Sendable {
+    let phone: String
+}
+
+struct OtpVerifyRequest: Encodable, Sendable {
+    let phone: String
+    let code: String
+}
+
+struct DisplayNameRequest: Encodable, Sendable {
+    let displayName: String
+}
+
+struct BankAccountRequest: Codable, Equatable, Sendable {
+    let sortCode: String
+    let accountNumber: String
+    let accountHolderName: String
+    let providerId: String?
+}
+
+struct DirectoryLookupRequest: Codable, Sendable {
+    let hashes: [String]
 }

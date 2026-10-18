@@ -51,18 +51,16 @@ final class APIClient: Sendable {
             } catch {
                 throw AppError.decoding
             }
-        case 400:
-            throw AppError.validation(errorMessage(from: data) ?? "That request wasn't valid.")
         case 401:
             throw AppError.unauthorized
         case 403:
             throw AppError.forbidden
         case 404:
             throw AppError.notFound
-        case 429:
-            throw AppError.rateLimited
+        case 400, 409, 422, 429:
+            throw AppError.rejected(status: http.statusCode, body: errorBody(from: data))
         default:
-            throw AppError.server(status: http.statusCode, message: errorMessage(from: data))
+            throw AppError.server(status: http.statusCode, message: errorBody(from: data)?.message)
         }
     }
 
@@ -93,7 +91,25 @@ final class APIClient: Sendable {
         return request
     }
 
-    private func errorMessage(from data: Data) -> String? {
-        (try? JSONDecoder.quid.decode(ErrorBodyDTO.self, from: data))?.message
+    private func errorBody(from data: Data) -> ErrorBodyDTO? {
+        try? JSONDecoder.quid.decode(ErrorBodyDTO.self, from: data)
+    }
+}
+
+extension AppError {
+    /// 400/409/422/429 with the backend's { error, message, details? } body.
+    static func rejected(status: Int, body: ErrorBodyDTO?) -> AppError {
+        guard let body else {
+            return status == 429 ? .rateLimited : .validation("That request wasn't valid.")
+        }
+        let message = body.message ?? "That request wasn't valid."
+        switch body.error {
+        case "validation_error", "bad_request":
+            return .validation(message)
+        case "rate_limited":
+            return .rateLimited
+        default:
+            return .api(code: body.error, message: message, details: APIErrorDetails(attemptsRemaining: body.details?.attemptsRemaining))
+        }
     }
 }

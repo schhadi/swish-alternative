@@ -9,7 +9,7 @@ The full product spec is in [`docs/SPEC.md`](docs/SPEC.md). Work happens phase b
 | Phase | Scope | State |
 | --- | --- | --- |
 | 0 | Scaffold: repo layout, backend skeleton + Prisma schema, iOS project + design system + `APIClient` + MockMode, CI, docs | **Done, awaiting review** |
-| 1 | Onboarding + directory | Not started |
+| 1 | Onboarding + directory: OTP sign-in, name, bank account with Confirmation of Payee, providers, contacts hashing + lookup, real (empty) feeds | **Done, awaiting review** |
 | 2 | Pay end to end in the TrueLayer sandbox | Not started |
 | 3 | Requests and splits | Not started |
 | 4 | Collect | Not started |
@@ -47,7 +47,7 @@ Open `ios/QuidApp.xcodeproj` in Xcode 16 or later (iOS 17 simulator).
 
 - Scheme **QuidApp-Mock**: runs the app against canned data with no backend. Use this to work on UI.
 - Scheme **QuidApp**: talks to the backend at `http://localhost:3000`. Set the `QUID_API_BASE_URL` environment variable in the scheme to point a physical device at an ngrok URL.
-- With no session, the welcome screen offers **Explore the demo**, which switches a live build into MockMode.
+- With no session, the welcome screen offers **Explore the demo**, which switches a live build into MockMode. Launch with `-mock -signed-out` to walk onboarding against the mock backend (code `123456`).
 
 Tests: product → Test in Xcode, or `scripts/ios-test.sh`. Unit tests cover money formatting, date grouping, the API client's error mapping (via the same `MockURLProtocol` MockMode uses), and every ViewModel. One XCUITest launches the app in MockMode and checks the tab bar.
 

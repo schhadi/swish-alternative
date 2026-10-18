@@ -70,6 +70,24 @@ final class APIClientTests: XCTestCase {
     func testMapsRateLimited() async {
         MockServer.shared.register(.get, "/me", .empty(status: 429))
         await assertThrows(API.me(), expected: .rateLimited)
+        MockServer.shared.register(.get, "/me", .json(#"{"error":"rate_limited","message":"Slow down"}"#, status: 429))
+        await assertThrows(API.me(), expected: .rateLimited)
+    }
+
+    func testMapsCodedRejections() async {
+        MockServer.shared.register(.get, "/me", .json(#"{"error":"otp_invalid","message":"That code isn't right. 2 attempts left.","details":{"attemptsRemaining":2}}"#, status: 400))
+        await assertThrows(API.me(), expected: .api(code: "otp_invalid", message: "That code isn't right. 2 attempts left.", details: APIErrorDetails(attemptsRemaining: 2)))
+        MockServer.shared.register(.get, "/me", .json(#"{"error":"otp_locked","message":"Too many attempts."}"#, status: 429))
+        await assertThrows(API.me(), expected: .api(code: "otp_locked", message: "Too many attempts.", details: APIErrorDetails(attemptsRemaining: nil)))
+    }
+
+    func testPostsJSONBodies() async throws {
+        let response = try await client.send(API.otpStart(phone: "07700 900001"))
+        XCTAssertEqual(response.phoneE164, "+447700900001")
+        let request = try XCTUnwrap(MockServer.shared.recordedRequests().last)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
     }
 
     func testMapsDecodingFailure() async {

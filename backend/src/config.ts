@@ -27,6 +27,11 @@ const EnvSchema = z.object({
     .string()
     .regex(/^[0-9a-fA-F]{64}$/, "BANK_DATA_KEY must be 32 bytes as 64 hex characters"),
   PUBLIC_BASE_URL: z.string().url().default("http://localhost:3000"),
+  // Pluggable senders/verifiers (docs/SPEC.md sections 5 and 6). "log"/"fake" are dev-only and refused in production.
+  SMS_SENDER: z.enum(["log", "none"]).default("log"),
+  COP_VERIFIER: z.enum(["fake", "none"]).default("fake"),
+  SESSION_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  OTP_TTL_MINUTES: z.coerce.number().int().positive().default(5),
   TRUELAYER_ENV: z.enum(["sandbox", "live"]).default("sandbox"),
   TRUELAYER_CLIENT_ID: z.preprocess(emptyToUndefined, z.string().optional()),
   TRUELAYER_CLIENT_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
@@ -42,7 +47,19 @@ function loadEnv(): Env {
     const lines = parsed.error.issues.map((issue) => `  ${issue.path.join(".")}: ${issue.message}`);
     throw new Error(`Invalid environment configuration:\n${lines.join("\n")}\nSee backend/.env.example.`);
   }
-  return parsed.data;
+  const config = parsed.data;
+  if (config.NODE_ENV === "production") {
+    // Fail closed: dev stand-ins must never ship.
+    const problems: string[] = [];
+    if (config.SMS_SENDER === "log") problems.push("SMS_SENDER=log logs OTP codes; set a real sender");
+    if (config.COP_VERIFIER === "fake") problems.push("COP_VERIFIER=fake accepts any account; set a real verifier");
+    if (config.PHONE_HASH_PEPPER.startsWith("dev-only")) problems.push("PHONE_HASH_PEPPER is the dev placeholder");
+    if (/^0+$/.test(config.BANK_DATA_KEY)) problems.push("BANK_DATA_KEY is the all-zero placeholder");
+    if (problems.length > 0) {
+      throw new Error(`Refusing to start in production:\n${problems.map((p) => `  ${p}`).join("\n")}`);
+    }
+  }
+  return config;
 }
 
 export const env: Env = loadEnv();

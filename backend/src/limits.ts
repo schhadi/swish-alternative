@@ -14,6 +14,11 @@ export const LIMITS = {
   referenceMaxLength: 18,
   /** OTP attempts before the challenge is locked */
   otpMaxAttempts: 5,
+  /** New OTP challenges allowed per phone number in the window below */
+  otpStartsPerWindow: 5,
+  otpStartWindowMinutes: 15,
+  /** Auth routes: requests per IP per minute */
+  authRequestsPerMinutePerIp: 30,
   /** Directory lookup: hashes per request and requests per minute per user */
   directoryLookupMaxHashes: 1_000,
   directoryLookupRequestsPerMinute: 10,

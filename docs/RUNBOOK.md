@@ -42,6 +42,20 @@ MockMode is on when any of these is true: `-mock` launch argument, `QUID_MOCK=1`
 
 Tests: Product → Test, or `scripts/ios-test.sh "iPhone 16"`.
 
+## Phase 1: sign up, link a bank, check the directory
+
+1. Backend running (`scripts/dev-backend.sh`), app on the `QuidApp` scheme.
+2. Enter any UK mobile number. The code is not sent: read it from the backend log line `SMS not sent (SMS_SENDER=log)`.
+3. Pick a name, then link an account. Confirmation of Payee is faked (`COP_VERIFIER=fake`):
+   - any sort code / account number with any name: MATCH
+   - sort code `99-99-99`: NO_MATCH (blocked)
+   - `04-00-04` `87654321` with `priya  patel`: CLOSE_MATCH, bank's name "Priya Patel"
+4. Bank details are stored encrypted with `BANK_DATA_KEY`; `GET /me` never returns them.
+5. Directory: `npm run seed` creates Sam (+44 7700 900001), Priya (…002) and Tom (…003). Add those numbers to a simulator contact and the lookup will mark them registered once the contact picker lands in Phase 2. Until then `POST /directory/lookup` can be exercised with `curl` using SHA-256 hashes of E.164 numbers.
+6. `POST /auth/logout` ends the session; `DELETE /me` deletes bank details and blanks the phone number.
+
+MockMode equivalents: code `123456`; sort code `999999` is NO_MATCH; an all-lowercase holder name is CLOSE_MATCH. Launch with `-mock -signed-out` to start on the welcome screen.
+
 ## CI
 
 `.github/workflows/ci.yml`: backend job on Ubuntu (`npm ci`, typecheck, test); iOS job on `macos-15` that picks the newest Xcode 16 and the newest plain-numbered iPhone simulator available, then runs `xcodebuild test` for the `QuidApp` scheme (unit + UI tests). The raw xcodebuild log is uploaded as an artifact.
