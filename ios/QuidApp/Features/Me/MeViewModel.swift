@@ -44,8 +44,8 @@ final class MeViewModel {
         }
     }
 
-    /// "+447700900001" -> "+44 7700 900001"
-    static func formattedPhone(_ e164: String?) -> String {
+    /// "+447700900001" -> "+44 7700 900001". Pure, so callable off the main actor (tests, previews).
+    nonisolated static func formattedPhone(_ e164: String?) -> String {
         guard let e164 else { return "" }
         guard e164.hasPrefix("+44"), e164.count == 13 else { return e164 }
         let digits = e164.dropFirst(3)
