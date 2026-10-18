@@ -108,16 +108,16 @@ enum API {
 
 // MARK: - Request bodies
 
-struct OtpStartRequest: Encodable, Sendable {
+struct OtpStartRequest: Codable, Sendable {
     let phone: String
 }
 
-struct OtpVerifyRequest: Encodable, Sendable {
+struct OtpVerifyRequest: Codable, Sendable {
     let phone: String
     let code: String
 }
 
-struct DisplayNameRequest: Encodable, Sendable {
+struct DisplayNameRequest: Codable, Sendable {
     let displayName: String
 }
 
