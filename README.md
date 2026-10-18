@@ -8,7 +8,7 @@ The full product spec is in [`docs/SPEC.md`](docs/SPEC.md). Work happens phase b
 
 | Phase | Scope | State |
 | --- | --- | --- |
-| 0 | Scaffold: repo layout, backend skeleton + Prisma schema, iOS project + design system + `APIClient` + MockMode, CI, docs | **Done, awaiting review** |
+| 0 | Scaffold: repo layout, backend skeleton + Prisma schema, iOS project + design system + `APIClient` + MockMode, CI, docs | Done, reviewed |
 | 1 | Onboarding + directory: OTP sign-in, name, bank account with Confirmation of Payee, providers, contacts hashing + lookup, real (empty) feeds | **Done, awaiting review** |
 | 2 | Pay end to end in the TrueLayer sandbox | Not started |
 | 3 | Requests and splits | Not started |

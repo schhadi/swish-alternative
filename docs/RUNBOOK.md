@@ -58,7 +58,7 @@ MockMode equivalents: code `123456`; sort code `999999` is NO_MATCH; an all-lowe
 
 ## CI
 
-`.github/workflows/ci.yml`: backend job on Ubuntu (`npm ci`, typecheck, test); iOS job on `macos-15` that picks the newest Xcode 16 and the newest plain-numbered iPhone simulator available, then runs `xcodebuild test` for the `QuidApp` scheme (unit + UI tests). The raw xcodebuild log is uploaded as an artifact.
+`.github/workflows/ci.yml`: backend job on Ubuntu (`npm ci`, typecheck, test); iOS job on `macos-15` that picks the newest Xcode 16 and the newest plain-numbered iPhone simulator available, then runs `xcodebuild test` for the `QuidApp` scheme (unit + UI tests). The raw xcodebuild log is uploaded as an artifact. A crashing test host fails the job even when xcodebuild exits 0 (it otherwise relaunches the host and reports the survivors as passed), and on failure the job prints the newest `QuidApp` crash reports and the simulator log lines for the app, so a crash can be read from the job log without the artifact.
 
 ## Secrets
 
