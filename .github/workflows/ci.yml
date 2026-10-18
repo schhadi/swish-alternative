@@ -50,10 +50,13 @@ jobs:
             -project ios/QuidApp.xcodeproj \
             -scheme QuidApp \
             -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.device }}" \
+            -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO \
             > xcodebuild.log 2>&1
           STATUS=$?
-          grep -E "error:|Test Suite '.*' (passed|failed)|Executed [0-9]+ tests|\*\* TEST" xcodebuild.log || true
+          echo "Passed test cases: $(grep -ciE 'test case .* passed' xcodebuild.log)"
+          echo "Failed test cases: $(grep -ciE 'test case .* failed' xcodebuild.log)"
+          grep -iE "error:|test suite .* (passed|failed)|executed [0-9]+ tests|\*\* TEST" xcodebuild.log || true
           exit $STATUS
       - name: Upload build log
         if: always()

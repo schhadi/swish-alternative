@@ -52,7 +52,7 @@ final class ActivityViewModel {
     }
 
     /// Groups by calendar day, newest day first, newest payment first within a day.
-    static func sections(for payments: [PaymentDTO], calendar: Calendar = .current) -> [ActivitySection] {
+    nonisolated static func sections(for payments: [PaymentDTO], calendar: Calendar = .current) -> [ActivitySection] {
         let grouped = Dictionary(grouping: payments) { calendar.startOfDay(for: $0.createdAt) }
         return grouped.keys.sorted(by: >).map { day in
             ActivitySection(
