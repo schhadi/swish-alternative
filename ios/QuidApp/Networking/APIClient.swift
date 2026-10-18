@@ -5,21 +5,25 @@ final class APIClient: Sendable {
     let baseURL: URL
     private let session: URLSession
     private let tokenStore: any TokenStore
+    /// Called when an authenticated call gets 401: the session is over (expired, logged out elsewhere, or deleted).
+    private let onUnauthorized: (@Sendable () -> Void)?
 
-    init(baseURL: URL, tokenStore: any TokenStore, session: URLSession = .shared) {
+    init(baseURL: URL, tokenStore: any TokenStore, session: URLSession = .shared, onUnauthorized: (@Sendable () -> Void)? = nil) {
         self.baseURL = baseURL
         self.tokenStore = tokenStore
         self.session = session
+        self.onUnauthorized = onUnauthorized
     }
 
     /// A client whose requests never leave the process: `MockServer` answers with canned JSON.
-    static func mock(tokenStore: any TokenStore) -> APIClient {
+    static func mock(tokenStore: any TokenStore, onUnauthorized: (@Sendable () -> Void)? = nil) -> APIClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
         return APIClient(
             baseURL: URL(string: "https://mock.quid.invalid")!,
             tokenStore: tokenStore,
-            session: URLSession(configuration: configuration)
+            session: URLSession(configuration: configuration),
+            onUnauthorized: onUnauthorized
         )
     }
 
@@ -52,6 +56,10 @@ final class APIClient: Sendable {
                 throw AppError.decoding
             }
         case 401:
+            if endpoint.requiresAuth {
+                tokenStore.clear()
+                onUnauthorized?()
+            }
             throw AppError.unauthorized
         case 403:
             throw AppError.forbidden

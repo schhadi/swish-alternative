@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { env } from "./config.js";
 import { HttpError } from "./lib/errors.js";
 import { loggerOptions } from "./lib/logger.js";
+import { LIMITS } from "./limits.js";
 import { authRoutes } from "./routes/auth.js";
 import { directoryRoutes } from "./routes/directory.js";
 import { healthRoutes } from "./routes/health.js";
@@ -26,6 +27,11 @@ export interface AppServices {
 
 export interface BuildAppOptions {
   services?: Partial<AppServices>;
+  /**
+   * Per-IP cap on the auth routes (default LIMITS.authRequestsPerMinutePerIp). The one limit tests can tune:
+   * every injected request shares 127.0.0.1, so a file of tests would trip the production cap.
+   */
+  authRequestsPerMinutePerIp?: number;
 }
 
 declare module "fastify" {
@@ -82,7 +88,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.register(rateLimit, { global: false });
 
   app.register(healthRoutes);
-  app.register(authRoutes);
+  app.register(authRoutes, { perIpMax: options.authRequestsPerMinutePerIp ?? LIMITS.authRequestsPerMinutePerIp });
   app.register(meRoutes);
   app.register(providerRoutes);
   app.register(directoryRoutes);

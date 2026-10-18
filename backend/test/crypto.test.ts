@@ -5,22 +5,34 @@ import { digestsEqual, hashOtpCode, hashToken, newOtpCode, newSessionToken } fro
 const KEY = "2222222222222222222222222222222222222222222222222222222222222222";
 
 describe("field encryption", () => {
+  const AAD = "user:u1:sortCodeEnc";
+
   it("round-trips and never repeats ciphertext", () => {
-    const a = encryptField("12-34-56", KEY);
-    const b = encryptField("12-34-56", KEY);
+    const a = encryptField("12-34-56", AAD, KEY);
+    const b = encryptField("12-34-56", AAD, KEY);
     expect(a).not.toBe(b);
-    expect(decryptField(a, KEY)).toBe("12-34-56");
-    expect(decryptField(b, KEY)).toBe("12-34-56");
+    expect(decryptField(a, AAD, KEY)).toBe("12-34-56");
+    expect(decryptField(b, AAD, KEY)).toBe("12-34-56");
+    expect(Buffer.from(a, "base64")[0]).toBe(0x01);
   });
 
-  it("fails on tampering or the wrong key", () => {
-    const payload = encryptField("12345678", KEY);
+  it("is bound to its owner and field", () => {
+    const payload = encryptField("12345678", "user:u1:accountNumberEnc", KEY);
+    expect(() => decryptField(payload, "user:u2:accountNumberEnc", KEY)).toThrow();
+    expect(() => decryptField(payload, "user:u1:sortCodeEnc", KEY)).toThrow();
+  });
+
+  it("fails on tampering, the wrong key or an unknown version", () => {
+    const payload = encryptField("12345678", AAD, KEY);
     const tampered = Buffer.from(payload, "base64");
     const last = tampered.length - 1;
     tampered[last] = (tampered[last] ?? 0) ^ 0xff;
-    expect(() => decryptField(tampered.toString("base64"), KEY)).toThrow();
-    expect(() => decryptField(payload, "3".repeat(64))).toThrow();
-    expect(() => decryptField("AAAA", KEY)).toThrow();
+    expect(() => decryptField(tampered.toString("base64"), AAD, KEY)).toThrow();
+    expect(() => decryptField(payload, AAD, "3".repeat(64))).toThrow();
+    expect(() => decryptField("AAAA", AAD, KEY)).toThrow();
+    const wrongVersion = Buffer.from(payload, "base64");
+    wrongVersion[0] = 0x02;
+    expect(() => decryptField(wrongVersion.toString("base64"), AAD, KEY)).toThrow(/version/);
   });
 });
 

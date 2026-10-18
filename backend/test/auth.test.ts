@@ -81,6 +81,34 @@ describe("auth", () => {
     expect(fresh.statusCode).toBe(200);
   });
 
+  it("never compares more than five guesses even when they arrive together", async () => {
+    await ctx.app.inject({ method: "POST", url: "/auth/otp/start", payload: { phone: PHONE } });
+    const code = ctx.sms.lastCode();
+    const wrong = code === "000000" ? "000001" : "000000";
+    const responses = await Promise.all(
+      Array.from({ length: 20 }, () => ctx.app.inject({ method: "POST", url: "/auth/otp/verify", payload: { phone: PHONE, code: wrong } })),
+    );
+    const invalid = responses.filter((r) => r.statusCode === 400).length;
+    const locked = responses.filter((r) => r.statusCode === 429).length;
+    expect(invalid).toBeLessThanOrEqual(LIMITS.otpMaxAttempts);
+    expect(invalid + locked).toBe(20);
+    const challenge = await prisma.otpChallenge.findFirstOrThrow({ where: { phoneE164: "+447700900001" } });
+    expect(challenge.attempts).toBe(LIMITS.otpMaxAttempts);
+  });
+
+  it("purges expired challenges and sessions", async () => {
+    const { purgeExpired } = await import("../src/services/maintenance.js");
+    const { userId } = await signIn(ctx, PHONE);
+    await prisma.otpChallenge.create({ data: { phoneE164: "+447700900009", codeHash: "x", expiresAt: new Date(Date.now() - 2 * 60 * 60 * 1000) } });
+    await prisma.session.create({ data: { userId, tokenHash: "stale", expiresAt: new Date(Date.now() - 1_000) } });
+    const before = await prisma.session.count({ where: { userId } });
+    const removed = await purgeExpired();
+    expect(removed.challenges).toBeGreaterThanOrEqual(1);
+    expect(removed.sessions).toBe(1);
+    expect(await prisma.session.count({ where: { userId } })).toBe(before - 1);
+    expect(await prisma.otpChallenge.count({ where: { phoneE164: "+447700900009" } })).toBe(0);
+  });
+
   it("rejects expired and reused codes", async () => {
     await ctx.app.inject({ method: "POST", url: "/auth/otp/start", payload: { phone: PHONE } });
     const code = ctx.sms.lastCode();
@@ -106,6 +134,24 @@ describe("auth", () => {
     const blocked = await ctx.app.inject({ method: "POST", url: "/auth/otp/start", payload: { phone: PHONE } });
     expect(blocked.statusCode).toBe(429);
     expect(blocked.json().error).toBe("otp_rate_limited");
+  });
+
+  it("caps auth requests per IP", async () => {
+    const { app } = await createTestApp({ authRequestsPerMinutePerIp: 3 });
+    try {
+      for (let i = 0; i < 3; i += 1) {
+        const allowed = await app.inject({ method: "POST", url: "/auth/otp/verify", payload: { phone: PHONE, code: "12" } });
+        expect(allowed.statusCode).toBe(400);
+      }
+      const blocked = await app.inject({ method: "POST", url: "/auth/otp/verify", payload: { phone: PHONE, code: "12" } });
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.json().error).toBe("rate_limited");
+      // Each route keeps its own count, so a blocked verify does not stop the number asking for a fresh code.
+      const start = await app.inject({ method: "POST", url: "/auth/otp/start", payload: { phone: PHONE } });
+      expect(start.statusCode).toBe(200);
+    } finally {
+      await app.close();
+    }
   });
 
   it("validates the code shape before touching the database", async () => {

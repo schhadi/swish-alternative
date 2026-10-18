@@ -13,9 +13,14 @@ import { LIMITS } from "../limits.js";
 const StartBody = z.object({ phone: z.string().min(5).max(32) });
 const VerifyBody = z.object({ phone: z.string().min(5).max(32), code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code") });
 
-const perIp = { config: { rateLimit: { max: LIMITS.authRequestsPerMinutePerIp, timeWindow: "1 minute" } } };
+export interface AuthRouteOptions {
+  /** Requests per minute per IP, counted separately for each OTP route. See BuildAppOptions. */
+  perIpMax?: number;
+}
 
-export async function authRoutes(app: FastifyInstance): Promise<void> {
+export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions = {}): Promise<void> {
+  const perIp = { config: { rateLimit: { max: options.perIpMax ?? LIMITS.authRequestsPerMinutePerIp, timeWindow: "1 minute" } } };
+
   /**
    * Starts a sign-in: creates a one-time code for the number and hands it to the SmsSender.
    * The response is identical for registered and unregistered numbers, so it cannot be used to probe the directory.
@@ -67,12 +72,17 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     if (challenge.expiresAt.getTime() <= Date.now()) {
       throw new HttpError(400, "otp_expired", "That code has expired. Request a new one.");
     }
+    // Claim an attempt atomically before comparing, so concurrent guesses cannot exceed the limit.
+    const claimed = await prisma.otpChallenge.updateMany({
+      where: { id: challenge.id, consumedAt: null, attempts: { lt: LIMITS.otpMaxAttempts } },
+      data: { attempts: { increment: 1 } },
+    });
+    if (claimed.count === 0) {
+      throw new HttpError(429, "otp_locked", "Too many attempts. Request a new code.");
+    }
     if (!digestsEqual(challenge.codeHash, hashOtpCode(phoneE164, code))) {
-      const updated = await prisma.otpChallenge.update({
-        where: { id: challenge.id },
-        data: { attempts: { increment: 1 } },
-      });
-      const attemptsRemaining = Math.max(0, LIMITS.otpMaxAttempts - updated.attempts);
+      const fresh = await prisma.otpChallenge.findUnique({ where: { id: challenge.id } });
+      const attemptsRemaining = Math.max(0, LIMITS.otpMaxAttempts - (fresh?.attempts ?? LIMITS.otpMaxAttempts));
       if (attemptsRemaining === 0) {
         throw new HttpError(429, "otp_locked", "Too many attempts. Request a new code.", { attemptsRemaining });
       }
@@ -84,6 +94,14 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const token = newSessionToken();
     const sessionExpiresAt = new Date(Date.now() + env.SESSION_TTL_DAYS * 24 * 60 * 60_000);
     const { user, isNew } = await prisma.$transaction(async (tx) => {
+      // A code mints exactly one session: the consume is conditional and the transaction rolls back if it lost.
+      const consumed = await tx.otpChallenge.updateMany({
+        where: { id: challenge.id, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      if (consumed.count === 0) {
+        throw new HttpError(400, "otp_missing", "Request a code first.");
+      }
       await tx.otpChallenge.updateMany({ where: { phoneE164, consumedAt: null }, data: { consumedAt: new Date() } });
       const existing = await tx.user.findUnique({ where: { phoneE164 } });
       let user = existing;

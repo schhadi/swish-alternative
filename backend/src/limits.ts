@@ -22,6 +22,8 @@ export const LIMITS = {
   /** Directory lookup: hashes per request and requests per minute per user */
   directoryLookupMaxHashes: 1_000,
   directoryLookupRequestsPerMinute: 10,
+  /** Confirmation of Payee calls a per-call-billed external service: cap verifications per user */
+  bankVerificationsPerHour: 10,
   /** Reminders (requests and collections): once per 24h per target */
   reminderMinIntervalHours: 24,
   /** Payment requests expire after this many days */

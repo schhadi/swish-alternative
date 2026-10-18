@@ -24,8 +24,8 @@ export function normaliseUKPhone(input: string): string | null {
   return `+44${national}`;
 }
 
-/** "+447700900123" -> "+44 7700 ***123" for log lines and UI hints. */
+/** "+447700900123" -> "+44 ***123": enough to tell numbers apart in a log, not enough to dial one. */
 export function maskPhone(phoneE164: string): string {
   if (phoneE164.length < 7) return "***";
-  return `${phoneE164.slice(0, 3)} ${phoneE164.slice(3, 7)} ***${phoneE164.slice(-3)}`;
+  return `${phoneE164.slice(0, 3)} ***${phoneE164.slice(-3)}`;
 }

@@ -31,7 +31,6 @@ export const GB_PROVIDERS: readonly Provider[] = [
   { id: "ob-tsb", displayName: "TSB", logoUrl: null },
   { id: "ob-revolut", displayName: "Revolut", logoUrl: null },
   { id: "ob-chase", displayName: "Chase", logoUrl: null },
-  { id: "ob-monument", displayName: "Metro Bank", logoUrl: null },
   { id: "ob-virgin-money", displayName: "Virgin Money", logoUrl: null },
   { id: "ob-co-op", displayName: "The Co-operative Bank", logoUrl: null },
 ];

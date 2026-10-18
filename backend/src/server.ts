@@ -14,9 +14,21 @@ async function main(): Promise<void> {
   const db = await import("./lib/db.js");
   prisma = db.prisma;
   const { buildApp } = await import("./app.js");
+  const { purgeExpired } = await import("./services/maintenance.js");
   app = buildApp();
   await app.listen({ port: env.PORT, host: env.HOST });
   app.log.info({ env: env.NODE_ENV, truelayer: env.TRUELAYER_ENV }, "quid backend ready");
+
+  const purge = async () => {
+    try {
+      const removed = await purgeExpired();
+      app?.log.debug(removed, "purged expired rows");
+    } catch (error) {
+      app?.log.warn({ err: error }, "purge failed");
+    }
+  };
+  await purge();
+  setInterval(() => void purge(), 60 * 60 * 1000).unref();
 }
 
 async function shutdown(signal: string): Promise<void> {

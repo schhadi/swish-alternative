@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { buildApp } from "../src/app.js";
+import { buildApp, type BuildAppOptions } from "../src/app.js";
 import { prisma } from "../src/lib/db.js";
 import type { SmsSender } from "../src/services/sms.js";
 
@@ -24,9 +24,14 @@ export interface TestContext {
   sms: CapturingSmsSender;
 }
 
-export async function createTestApp(): Promise<TestContext> {
+/** One app per test file. The per-IP auth cap is lifted because every injected request comes from 127.0.0.1. */
+export async function createTestApp(options: BuildAppOptions = {}): Promise<TestContext> {
   const sms = new CapturingSmsSender();
-  const app = buildApp({ services: { smsSender: sms } });
+  const app = buildApp({
+    ...options,
+    services: { smsSender: sms, ...options.services },
+    authRequestsPerMinutePerIp: options.authRequestsPerMinutePerIp ?? 10_000,
+  });
   await app.ready();
   return { app, sms };
 }

@@ -43,9 +43,10 @@ final class AppEnvironment {
             return demo(signedIn: !MockMode.startsSignedOut)
         }
         let store = KeychainTokenStore()
+        let session = SessionStore(store: store)
         return AppEnvironment(
-            api: APIClient(baseURL: AppConfig.apiBaseURL, tokenStore: store),
-            session: SessionStore(store: store),
+            api: APIClient(baseURL: AppConfig.apiBaseURL, tokenStore: store, onUnauthorized: sessionEnder(session)),
+            session: session,
             isMock: false
         )
     }
@@ -54,24 +55,46 @@ final class AppEnvironment {
     static func demo(signedIn: Bool = true, defaults: UserDefaults = .standard) -> AppEnvironment {
         let store = InMemoryTokenStore(token: signedIn ? MockMode.sessionToken : nil)
         MockServer.shared.reset(signedIn: signedIn)
-        let environment = AppEnvironment(api: .mock(tokenStore: store), session: SessionStore(store: store), isMock: true, defaults: defaults)
-        if !signedIn {
+        let session = SessionStore(store: store)
+        let environment = AppEnvironment(
+            api: .mock(tokenStore: store, onUnauthorized: sessionEnder(session)),
+            session: session,
+            isMock: true,
+            defaults: defaults
+        )
+        if signedIn {
+            environment.markDemoUserOnboarded()
+        } else {
             environment.resetOnboardingFlags()
         }
         return environment
+    }
+
+    /// Any authenticated call answered with 401 ends the session everywhere: RootView then shows Welcome.
+    private static func sessionEnder(_ session: SessionStore) -> @Sendable () -> Void {
+        { Task { @MainActor in session.signOut() } }
     }
 
     /// Switches a live build into the demo ("Explore the demo" on the welcome screen).
     func enterDemoMode() {
         let store = InMemoryTokenStore(token: MockMode.sessionToken)
         MockServer.shared.reset(signedIn: true)
-        api = .mock(tokenStore: store)
-        session = SessionStore(store: store)
+        let demoSession = SessionStore(store: store)
+        api = .mock(tokenStore: store, onUnauthorized: AppEnvironment.sessionEnder(demoSession))
+        session = demoSession
         isMock = true
         profile = nil
         profileError = nil
         hasLoadedProfile = false
         onboardingInProgress = false
+        markDemoUserOnboarded()
+    }
+
+    /// The demo user finished onboarding long ago, so the explainer is treated as seen for this launch only.
+    /// Nothing is written to UserDefaults: a live sign-in on the same device still gets the explainer once.
+    private func markDemoUserOnboarded() {
+        contactsExplainerSeen = true
+        bankLinkSkipped = false
     }
 
     // MARK: - Profile
@@ -155,7 +178,8 @@ final class AppEnvironment {
         resetOnboardingFlags()
     }
 
-    private func resetOnboardingFlags() {
+    /// Forgets the per-device flags, as a reinstall would. Called on sign-out.
+    func resetOnboardingFlags() {
         contactsExplainerSeen = false
         bankLinkSkipped = false
         defaults.removeObject(forKey: Keys.contactsExplainerSeen)

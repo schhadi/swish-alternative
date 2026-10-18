@@ -1,12 +1,12 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { currentUser, requireAuth } from "../lib/auth.js";
-import { encryptField } from "../lib/crypto.js";
 import { prisma } from "../lib/db.js";
 import { limitsDTO, publicUser } from "../lib/dto.js";
 import { HttpError } from "../lib/errors.js";
 import { LIMITS } from "../limits.js";
-import { providerDisplayName } from "../services/providers.js";
+import { coolingOffUntil, storeUserBankAccount } from "../services/bankAccounts.js";
+import { providerDisplayName, type Provider } from "../services/providers.js";
 
 const DisplayNameBody = z.object({
   displayName: z.string().trim().min(2, "Enter at least 2 characters").max(40, "Keep it under 40 characters"),
@@ -20,8 +20,6 @@ const BankAccountBody = z.object({
   accountHolderName: z.string().trim().min(2, "Enter the name on the account").max(70, "Keep it under 70 characters"),
   providerId: z.string().min(1).max(64).optional(),
 });
-
-const COOLING_OFF_MS = LIMITS.bankChangeCoolingOffHours * 60 * 60 * 1000;
 
 export async function meRoutes(app: FastifyInstance): Promise<void> {
   /** Profile, bank summary (never identifiers) and the limits the server enforces. */
@@ -43,11 +41,18 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
     return { user: publicUser(user) };
   });
 
+  // Confirmation of Payee is an external, per-call service that discloses account-holder names: cap it per user.
+  const verificationLimit = app.rateLimit({
+    max: LIMITS.bankVerificationsPerHour,
+    timeWindow: "1 hour",
+    keyGenerator: (request: FastifyRequest) => request.user?.id ?? request.ip,
+  });
+
   /**
    * Links (or replaces) the account the user receives into. Runs Confirmation of Payee first:
    * MATCH stores the details encrypted; CLOSE_MATCH and NO_MATCH store nothing and tell the app what to show.
    */
-  app.put("/me/bank-account", { preHandler: requireAuth }, async (request) => {
+  app.put("/me/bank-account", { preHandler: [requireAuth, verificationLimit] }, async (request) => {
     const { id } = currentUser(request);
     const body = BankAccountBody.parse(request.body);
     const providers = await app.services.providerSource.list();
@@ -56,6 +61,7 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const result = await app.services.payeeVerifier.verify(body.sortCode, body.accountNumber, body.accountHolderName);
+    request.log.info({ userId: id, copStatus: result.status }, "bank account verification");
     if (result.status === "NO_MATCH") {
       return { copStatus: "NO_MATCH" };
     }
@@ -63,29 +69,24 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
       return { copStatus: "CLOSE_MATCH", suggestedAccountHolderName: result.accountHolderName };
     }
 
-    const now = new Date();
-    const existing = await prisma.bankAccount.findUnique({ where: { userId: id } });
-    const encrypted = {
-      sortCodeEnc: encryptField(body.sortCode),
-      accountNumberEnc: encryptField(body.accountNumber),
-      accountHolderNameEnc: encryptField(body.accountHolderName),
+    const { account, replaced, identifiersChanged } = await storeUserBankAccount(id, {
+      sortCode: body.sortCode,
+      accountNumber: body.accountNumber,
+      accountHolderName: body.accountHolderName,
       providerId: body.providerId ?? null,
-      copStatus: "MATCH" as const,
-      verifiedAt: now,
-    };
-    const account = existing
-      ? await prisma.bankAccount.update({ where: { userId: id }, data: { ...encrypted, changedAt: now } })
-      : await prisma.bankAccount.create({ data: { ...encrypted, userId: id, changedAt: now, createdAt: now } });
-    request.log.info({ userId: id, replaced: Boolean(existing) }, "bank account linked");
+    });
+    request.log.info({ userId: id, replaced, identifiersChanged }, "bank account linked");
     return { copStatus: "MATCH", bankAccount: bankSummary(account, providers) };
   });
 
-  /** Hard-deletes bank details and the phone hash; keeps the row (anonymised) so payment history stays consistent. */
+  /** Hard-deletes bank details, sessions and one-time codes; keeps the row anonymised so payment history stays consistent. */
   app.delete("/me", { preHandler: requireAuth }, async (request, reply) => {
     const { id } = currentUser(request);
+    const user = await prisma.user.findUniqueOrThrow({ where: { id }, select: { phoneE164: true } });
     await prisma.$transaction([
       prisma.session.deleteMany({ where: { userId: id } }),
       prisma.bankAccount.deleteMany({ where: { userId: id } }),
+      ...(user.phoneE164 ? [prisma.otpChallenge.deleteMany({ where: { phoneE164: user.phoneE164 } })] : []),
       prisma.user.update({
         where: { id },
         data: { phoneE164: null, phoneHash: null, displayName: "Deleted user", deletedAt: new Date() },
@@ -105,14 +106,12 @@ interface BankAccountRow {
 }
 
 /** The only view of a bank account the app ever gets. */
-export function bankSummary(account: BankAccountRow, providers: Awaited<ReturnType<FastifyInstance["services"]["providerSource"]["list"]>>) {
-  const wasChanged = account.changedAt.getTime() - account.createdAt.getTime() > 1_000;
-  const coolingOffEnd = account.changedAt.getTime() + COOLING_OFF_MS;
+export function bankSummary(account: BankAccountRow, providers: readonly Provider[]) {
   return {
     bankName: providerDisplayName(account.providerId, providers) ?? "Your bank",
     providerId: account.providerId,
     copStatus: account.copStatus,
     verifiedAt: account.verifiedAt?.toISOString() ?? null,
-    coolingOffUntil: wasChanged && coolingOffEnd > Date.now() ? new Date(coolingOffEnd).toISOString() : null,
+    coolingOffUntil: coolingOffUntil(account)?.toISOString() ?? null,
   };
 }

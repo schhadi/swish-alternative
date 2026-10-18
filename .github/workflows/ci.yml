@@ -58,6 +58,12 @@ jobs:
           echo "Passed test cases: $(grep -ciE 'test case .* passed' xcodebuild.log)"
           echo "Failed test cases: $(grep -ciE 'test case .* failed' xcodebuild.log)"
           grep -iE "error:|test suite .* (passed|failed)|executed [0-9]+ tests|\*\* TEST" xcodebuild.log || true
+          # UI tests print the accessibility hierarchy when an element never appears; surface it in the job log.
+          if grep -q "UITEST-HIERARCHY-BEGIN" xcodebuild.log; then
+            echo "::group::UI test hierarchy dump"
+            sed -n '/UITEST-HIERARCHY-BEGIN/,/UITEST-HIERARCHY-END/p' xcodebuild.log | head -400
+            echo "::endgroup::"
+          fi
           exit $STATUS
       - name: Upload build log
         if: always()

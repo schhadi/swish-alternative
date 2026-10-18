@@ -19,6 +19,7 @@ describe("normaliseUKPhone", () => {
   });
 
   it("masks for logs", () => {
-    expect(maskPhone("+447700900123")).toBe("+44 7700 ***123");
+    expect(maskPhone("+447700900123")).toBe("+44 ***123");
+    expect(maskPhone("+447700900123")).not.toContain("7700");
   });
 });

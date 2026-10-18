@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { decryptField } from "../src/lib/crypto.js";
+import { decryptBankDetails, userOwnerKey } from "../src/services/bankAccounts.js";
 import { prisma } from "../src/lib/db.js";
 import { bearer, createTestApp, resetDatabase, signIn, type TestContext } from "./helpers.js";
 
@@ -62,9 +62,9 @@ describe("me", () => {
 
     const row = await prisma.bankAccount.findUniqueOrThrow({ where: { userId } });
     expect(row.sortCodeEnc).not.toContain("040004");
-    expect(decryptField(row.sortCodeEnc)).toBe("040004");
-    expect(decryptField(row.accountNumberEnc)).toBe("11112222");
-    expect(decryptField(row.accountHolderNameEnc)).toBe("Sam Okafor");
+    const details = decryptBankDetails(userOwnerKey(userId), row);
+    expect(details).toEqual({ sortCode: "040004", accountNumber: "11112222", accountHolderName: "Sam Okafor" });
+    expect(() => decryptBankDetails(userOwnerKey("someone-else"), row)).toThrow();
 
     const me = await ctx.app.inject({ method: "GET", url: "/me", headers: bearer(token) });
     expect(me.json().bankAccount.bankName).toBe("Monzo");
@@ -124,22 +124,44 @@ describe("me", () => {
     expect(unknown.json().error).toBe("unknown_provider");
   });
 
-  it("starts a cooling-off period when the account is changed, not when it is first linked", async () => {
-    const link = (accountNumber: string) =>
+  it("starts a cooling-off period only when the account identifiers change", async () => {
+    const link = (accountNumber: string, accountHolderName = "Sam Okafor", providerId?: string) =>
       ctx.app.inject({
         method: "PUT",
         url: "/me/bank-account",
         headers: bearer(token),
-        payload: { sortCode: "123456", accountNumber, accountHolderName: "Sam Okafor" },
+        payload: { sortCode: "123456", accountNumber, accountHolderName, ...(providerId ? { providerId } : {}) },
       });
     expect((await link("11111111")).json().bankAccount.coolingOffUntil).toBeNull();
-    // Pretend the first link happened a while ago so the change is distinguishable from creation.
-    await prisma.bankAccount.updateMany({ where: { userId }, data: { createdAt: new Date(Date.now() - 60 * 60 * 1000) } });
+    // Re-verifying the same account, fixing the name or choosing a bank is not a change.
+    expect((await link("11111111")).json().bankAccount.coolingOffUntil).toBeNull();
+    expect((await link("11111111", "Samuel Okafor", "ob-monzo")).json().bankAccount.coolingOffUntil).toBeNull();
+    // A different account number is.
+    await new Promise((resolve) => setTimeout(resolve, 5));
     const changed = (await link("22222222")).json().bankAccount;
     expect(changed.coolingOffUntil).toEqual(expect.any(String));
     expect(new Date(changed.coolingOffUntil).getTime()).toBeGreaterThan(Date.now() + 23 * 60 * 60 * 1000);
     const me = await ctx.app.inject({ method: "GET", url: "/me", headers: bearer(token) });
     expect(me.json().bankAccount.coolingOffUntil).toBe(changed.coolingOffUntil);
+  });
+
+  it("caps verifications per user", async () => {
+    for (let i = 0; i < 10; i += 1) {
+      const response = await ctx.app.inject({
+        method: "PUT",
+        url: "/me/bank-account",
+        headers: bearer(token),
+        payload: { sortCode: "123456", accountNumber: "12345678", accountHolderName: "Sam Okafor" },
+      });
+      expect(response.statusCode).toBe(200);
+    }
+    const blocked = await ctx.app.inject({
+      method: "PUT",
+      url: "/me/bank-account",
+      headers: bearer(token),
+      payload: { sortCode: "123456", accountNumber: "12345678", accountHolderName: "Sam Okafor" },
+    });
+    expect(blocked.statusCode).toBe(429);
   });
 
   it("deletes the account: bank details gone, phone blanked, sessions revoked", async () => {
@@ -158,6 +180,7 @@ describe("me", () => {
     expect(user.displayName).toBe("Deleted user");
     expect(user.deletedAt).not.toBeNull();
     expect(await prisma.bankAccount.findUnique({ where: { userId } })).toBeNull();
+    expect(await prisma.otpChallenge.count({ where: { phoneE164: "+447700900002" } })).toBe(0);
     // The number can sign up again as a brand-new user.
     const again = await signIn(ctx, PHONE);
     expect(again.isNew).toBe(true);

@@ -24,7 +24,7 @@ describe("logger redaction", () => {
     logger.info({ user: { phone: "+447700900123", phoneE164: "+447700900123" }, session: { token: "abc" } }, "nested");
     logger.info({ req: { body: { phone: "+447700900123", code: "123456", sortCode: "123456" } } }, "request body");
     // The dev OTP line (spec section 5: "dev mode: code is logged") must stay readable.
-    logger.info({ sms: { to: "+44 7700 ***123", body: "Your Quid code is 123456" } }, "sms");
+    logger.info({ sms: { to: "+44 ***123", body: "Your Quid code is 123456" } }, "sms");
     const [top, nested, body, sms] = lines();
     expect(top).toMatchObject({ phone: "[redacted]", sortCode: "[redacted]", accountNumber: "[redacted]" });
     expect(nested).toMatchObject({ user: { phone: "[redacted]", phoneE164: "[redacted]" }, session: { token: "[redacted]" } });

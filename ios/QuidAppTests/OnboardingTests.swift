@@ -159,6 +159,8 @@ final class OnboardingTests: XCTestCase {
 
     func testResumesAtTheOutstandingStep() async {
         let environment = freshEnvironment(signedIn: true)
+        // A reinstall: the account exists but this device has no onboarding flags yet.
+        environment.resetOnboardingFlags()
         MockFixtures.state.displayName = ""
         await environment.loadProfile()
         XCTAssertEqual(environment.pendingOnboardingStep, .name)
@@ -179,6 +181,14 @@ final class OnboardingTests: XCTestCase {
         XCTAssertNil(environment.pendingOnboardingStep)
     }
 
+    func testDemoUserLandsOnTheTabsNotTheExplainer() async {
+        let environment = freshEnvironment(signedIn: true)
+        await environment.loadProfile()
+        XCTAssertNotNil(environment.profile)
+        XCTAssertNil(environment.pendingOnboardingStep)
+        XCTAssertFalse(defaults.bool(forKey: "onboarding.contactsExplainerSeen"), "the demo must not persist flags")
+    }
+
     func testSignOutClearsSessionAndFlags() async {
         let environment = freshEnvironment(signedIn: true)
         await environment.loadProfile()
@@ -188,6 +198,16 @@ final class OnboardingTests: XCTestCase {
         XCTAssertNil(environment.profile)
         XCTAssertFalse(environment.contactsExplainerSeen)
         XCTAssertEqual(MockServer.shared.recordedRequests().last?.url?.path(percentEncoded: false), "/auth/logout")
+    }
+
+    func testAnyAuthenticatedCallWith401EndsTheSession() async throws {
+        let environment = freshEnvironment(signedIn: true)
+        MockServer.shared.register(.get, "/payments", .json(#"{"error":"unauthorized","message":"Session expired"}"#, status: 401))
+        let home = HomeViewModel(api: environment.api)
+        await home.load()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertFalse(environment.session.isSignedIn)
+        XCTAssertEqual(home.error, .unauthorized)
     }
 
     func testExpiredSessionSignsOut() async {
