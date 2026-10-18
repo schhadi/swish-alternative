@@ -1,8 +1,9 @@
 import UIKit
 
 /// UIKit-driven chrome that SwiftUI cannot style directly: navigation titles and segmented controls use Manrope too.
-/// Fonts go through UIFontMetrics, scaled for the current text size. Appearance proxies are static, so RootView calls
-/// `configure()` again and rebuilds the tab hierarchy when the user changes their text size while the app is running.
+/// Fonts go through UIFontMetrics, scaled for the text size at the time of the call. Appearance proxies are static,
+/// so RootView calls `configure()` again when the text size changes; bars created after that pick up the new size,
+/// bars already on screen keep theirs until recreated (SwiftUI content scales live regardless).
 enum QuidAppearance {
     static func configure() {
         let navigationBar = UINavigationBar.appearance()

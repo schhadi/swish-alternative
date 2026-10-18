@@ -15,7 +15,7 @@ struct CollectionDetailView: View {
                 summaryCard
                 if let error = viewModel.error, viewModel.members.isEmpty {
                     ErrorStateView(error: error) { await viewModel.load() }
-                } else if viewModel.isLoading && viewModel.members.isEmpty {
+                } else if viewModel.isAwaitingFirstLoad && viewModel.members.isEmpty {
                     LoadingView()
                         .frame(height: 160)
                 } else {

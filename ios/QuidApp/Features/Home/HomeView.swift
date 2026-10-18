@@ -142,9 +142,10 @@ struct HomeView: View {
                 }
                 .accessibilityHidden(true)
             } else if viewModel.recentContacts.isEmpty {
-                Text(viewModel.error == nil ? "People you pay will show up here." : "Couldn't load your recent contacts.")
+                let failedFirstLoad = !viewModel.hasLoaded && viewModel.error != nil
+                Text(failedFirstLoad ? "Couldn't load your recent contacts." : "People you pay will show up here.")
                     .font(.quidSubheadline)
-                    .foregroundStyle(viewModel.error == nil ? Color.quidMuted : Color.quidFailureText)
+                    .foregroundStyle(failedFirstLoad ? Color.quidFailureText : Color.quidMuted)
             } else {
                 ScrollView(.horizontal) {
                     HStack(alignment: .top, spacing: 16) {

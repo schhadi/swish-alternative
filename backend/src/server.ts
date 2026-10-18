@@ -1,14 +1,18 @@
 import type { FastifyInstance } from "fastify";
-import { prisma } from "./lib/db.js";
+import type { PrismaClient } from "@prisma/client";
 
 let app: FastifyInstance | undefined;
+let prisma: PrismaClient | undefined;
 
 /**
- * Everything that can fail at startup (environment validation, logger transport, app construction, listen)
- * happens inside main(), so one handler reports it. The imports are dynamic for that reason.
+ * Everything that can fail at startup (environment validation, Prisma Client construction, logger transport,
+ * app construction, listen) happens inside main(), in that order, so one handler reports it.
+ * The imports are dynamic for that reason: config.js must be evaluated before lib/db.js instantiates Prisma.
  */
 async function main(): Promise<void> {
   const { env } = await import("./config.js");
+  const db = await import("./lib/db.js");
+  prisma = db.prisma;
   const { buildApp } = await import("./app.js");
   app = buildApp();
   await app.listen({ port: env.PORT, host: env.HOST });
@@ -18,7 +22,7 @@ async function main(): Promise<void> {
 async function shutdown(signal: string): Promise<void> {
   app?.log.info({ signal }, "shutting down");
   await app?.close();
-  await prisma.$disconnect();
+  await prisma?.$disconnect();
   process.exit(0);
 }
 

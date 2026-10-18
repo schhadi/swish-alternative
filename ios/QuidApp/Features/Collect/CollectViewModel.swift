@@ -57,8 +57,15 @@ final class CollectionDetailViewModel {
     private(set) var members: [CollectionMemberDTO] = []
     private(set) var error: AppError?
     private(set) var isLoading = false
+    /// True once any load has succeeded. Views use it to tell "not loaded yet" from "loaded and empty".
+    private(set) var hasLoaded = false
 
     private let api: APIClient
+
+    /// Placeholders are shown while this is true: nothing loaded yet and nothing failed.
+    var isAwaitingFirstLoad: Bool {
+        !hasLoaded && error == nil
+    }
 
     init(api: APIClient, collection: CollectionSummaryDTO) {
         self.api = api
@@ -102,6 +109,7 @@ final class CollectionDetailViewModel {
             organisationName = detail.organisationName
             members = detail.members
             error = nil
+            hasLoaded = true
         } catch is CancellationError {
             return
         } catch let appError as AppError {
