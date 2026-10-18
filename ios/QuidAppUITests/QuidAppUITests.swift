@@ -14,6 +14,17 @@ final class QuidAppUITests: XCTestCase {
         XCTFail("\(element) did not appear within \(Int(timeout))s", file: file, line: line)
     }
 
+    /// Taps a field and waits until it has keyboard focus before returning. In a scrolling SwiftUI form the first tap
+    /// can land while the keyboard-avoidance scroll is still settling, so it is retried.
+    private func focus(_ field: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        for _ in 0..<3 {
+            field.tap()
+            let focused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: field)
+            if XCTWaiter().wait(for: [focused], timeout: 2) == .completed { return }
+        }
+        XCTFail("\(field) never took keyboard focus", file: file, line: line)
+    }
+
     @MainActor
     func testTabBarShowsInMockMode() throws {
         let app = XCUIApplication()
@@ -42,7 +53,7 @@ final class QuidAppUITests: XCTestCase {
 
         let phone = app.textFields["onboarding.phone"]
         waitFor(phone, in: app, timeout: 10)
-        phone.tap()
+        focus(phone)
         phone.typeText("07700900001")
         app.buttons["onboarding.sendCode"].tap()
 
@@ -54,19 +65,19 @@ final class QuidAppUITests: XCTestCase {
 
         let name = app.textFields["onboarding.name"]
         waitFor(name, in: app, timeout: 10)
-        name.tap()
+        focus(name)
         name.typeText("Sam Okafor")
         app.buttons["onboarding.nameContinue"].tap()
 
         let sortCode = app.textFields["bank.sortCode"]
         waitFor(sortCode, in: app, timeout: 10)
-        sortCode.tap()
+        focus(sortCode)
         sortCode.typeText("123456")
         let accountNumber = app.textFields["bank.accountNumber"]
-        accountNumber.tap()
+        focus(accountNumber)
         accountNumber.typeText("12345678")
         let holder = app.textFields["bank.name"]
-        holder.tap()
+        focus(holder)
         holder.typeText("Sam Okafor")
         app.buttons["bank.verify"].tap()
 

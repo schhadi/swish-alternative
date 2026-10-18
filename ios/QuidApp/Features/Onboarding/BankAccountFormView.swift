@@ -110,6 +110,13 @@ struct BankAccountFormView: View {
         .sheet(isPresented: $showProviderPicker) {
             ProviderPickerSheet(viewModel: viewModel)
         }
+        // The number pads have no Next key: move on once a field is complete, like a card-entry form.
+        .onChange(of: viewModel.sortCode) {
+            if viewModel.sortCode.count == 6, focusedField == .sortCode { focusedField = .accountNumber }
+        }
+        .onChange(of: viewModel.accountNumber) {
+            if viewModel.accountNumber.count == 8, focusedField == .accountNumber { focusedField = .name }
+        }
         .task { await viewModel.loadProviders() }
     }
 
