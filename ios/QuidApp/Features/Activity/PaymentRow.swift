@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// One payment in a list: avatar, name, reference · time, signed amount, status pill when not paid.
+/// One payment in a list: avatar, name, reference · time, signed amount, status pill when not paid, chevron.
 struct PaymentRow: View {
     let payment: PaymentDTO
     let currentUserId: String
@@ -34,12 +34,15 @@ struct PaymentRow: View {
                     StatusPill(text: payment.status.pillText, tone: payment.status.pillTone)
                 }
             }
+            QuidChevron()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+        .frame(minHeight: 60)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
+        .accessibilityAddTraits(.isButton)
     }
 
     private var accessibilityLabel: String {

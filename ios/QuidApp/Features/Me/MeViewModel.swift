@@ -8,6 +8,8 @@ final class MeViewModel {
     private(set) var error: AppError?
     private(set) var isLoading = false
     private(set) var isDeleting = false
+    /// Set when account deletion fails; the view shows it as an alert and clears it.
+    var deleteError: AppError?
 
     private let api: APIClient
 
@@ -21,6 +23,8 @@ final class MeViewModel {
         do {
             me = try await api.send(API.me())
             error = nil
+        } catch is CancellationError {
+            return
         } catch let appError as AppError {
             error = appError
         } catch {
@@ -35,11 +39,13 @@ final class MeViewModel {
         do {
             _ = try await api.send(API.deleteAccount())
             return true
+        } catch is CancellationError {
+            return false
         } catch let appError as AppError {
-            error = appError
+            deleteError = appError
             return false
         } catch {
-            self.error = .unknown(error.localizedDescription)
+            deleteError = .unknown(error.localizedDescription)
             return false
         }
     }

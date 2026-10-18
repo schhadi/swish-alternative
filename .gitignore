@@ -35,4 +35,3 @@ ios/**/.swiftpm/
 *.ipa
 *.dSYM.zip
 *.dSYM
-ios/**/Package.resolved

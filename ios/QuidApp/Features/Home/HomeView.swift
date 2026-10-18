@@ -4,6 +4,7 @@ import SwiftUI
 struct HomeView: View {
     @State private var viewModel: HomeViewModel
     @State private var placeholder: PhasePlaceholder?
+    @ScaledMetric(relativeTo: .footnote) private var contactTileWidth: CGFloat = 72
     let showActivity: () -> Void
 
     init(api: APIClient, showActivity: @escaping () -> Void) {
@@ -46,7 +47,7 @@ struct HomeView: View {
             Text(viewModel.greeting)
                 .font(.quidTitle)
                 .foregroundStyle(Color.quidInk)
-                .redacted(reason: viewModel.me == nil ? .placeholder : [])
+                .redacted(reason: viewModel.isLoading && viewModel.me == nil ? .placeholder : [])
             bankLine
         }
     }
@@ -79,11 +80,21 @@ struct HomeView: View {
             Text("No bank account linked yet")
                 .font(.quidSubheadline)
                 .foregroundStyle(Color.quidMuted)
-        } else {
+        } else if viewModel.isLoading {
             Text("Loading your account")
                 .font(.quidSubheadline)
                 .foregroundStyle(Color.quidMuted)
                 .redacted(reason: .placeholder)
+        } else if let error = viewModel.error {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "exclamationmark.circle")
+                    .font(.system(size: 13, weight: .semibold))
+                    .accessibilityHidden(true)
+                Text("Couldn't load your account. \(error.userMessage)")
+            }
+            .font(.quidSubheadline)
+            .foregroundStyle(Color.quidFailureText)
+            .accessibilityElement(children: .combine)
         }
     }
 
@@ -147,16 +158,17 @@ struct HomeView: View {
                                         if contact.isRegistered {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .font(.system(size: 16, weight: .bold))
-                                                .foregroundStyle(Color.quidAccent, Color.quidBackground)
+                                                .foregroundStyle(Color.quidAccentText, Color.quidBackground)
                                                 .offset(x: 2, y: 2)
                                         }
                                     }
                                     Text(contact.firstName)
                                         .font(.quidFootnote)
                                         .foregroundStyle(Color.quidInk)
-                                        .lineLimit(1)
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.center)
                                 }
-                                .frame(width: 68)
+                                .frame(width: contactTileWidth)
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Pay \(contact.displayName)")

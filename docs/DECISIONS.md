@@ -27,3 +27,19 @@ Choices the brief (`SPEC.md`) doesn't make, with the reasoning. Newest at the bo
 15. **Phase 0 includes a UI shell** for the four tabs on canned data (slightly beyond "scaffold") so the design system could be reviewed as real screens. Later-phase actions open a "Phase N" sheet rather than silently doing nothing.
 16. **Repo-root scripts are shell wrappers** that `cd backend`; a TypeScript file in `/scripts` could not resolve `@prisma/client` from `backend/node_modules`.
 17. **Legal URLs** are placeholders (`https://quid.example/...`) until real pages exist.
+
+## Phase 0 review fixes
+
+An adversarial review (four lenses, each finding challenged by a skeptic) ran before hand-off; 21 findings were confirmed and fixed. Decisions that came out of it:
+
+18. **System chrome is tinted with `quidAccentText`**, not `quidAccent`: the selected tab, back buttons, toggles, progress bars and the loading spinner need 4.5:1 against dark surfaces, and `#0B6B54` only manages about 2.8:1 there. Filled buttons keep `quidAccent` because their foreground is white (6.5:1). The asset catalog's AccentColor has the same dark-appearance value so UIKit alerts match.
+19. **Activity, Collect and Me are card stacks, not `List`s.** `insetGrouped` lists force 10pt corners and SF section headers, which broke the one visual language across tabs. Rows that push a screen draw their own chevron (`QuidChevron`). Navigation titles and segmented controls are set to Manrope once at launch via `UIAppearance` (`QuidAppearance.configure()`), scaled with `UIFontMetrics` so Dynamic Type still applies.
+20. **Section headers are 44pt tall** so a trailing text action ("See all") always has a full-size hit target; small headers (day groups, settings groups) are 13pt muted Manrope.
+21. **Task cancellation is not an error.** `APIClient` turns `URLError.cancelled` into `CancellationError`, and every ViewModel's `load()` returns quietly on it. Switching tabs mid-load no longer flashes a "cancelled" error card.
+22. **Loading placeholders are driven by `isLoading`**, never by "data is nil", so a failed first load shows an error (with retry) instead of permanent shimmer. Account-deletion failures surface in their own alert (`deleteError`) rather than being swallowed.
+23. **Pretty logs are an explicit opt-in** (`LOG_PRETTY=1`). `pino-pretty` is a devDependency, so keying it off `NODE_ENV=development` crashed a production start with no fatal log line. `server.ts` now builds the app inside `main()` so any startup failure goes through one handler.
+24. **Log redaction uses explicit paths** (`phone`, `*.phone`, `req.body.phone`, …) generated from one `SENSITIVE_FIELDS` list, and `err.code` is deliberately visible. A test logs representative shapes and asserts exactly what is censored. Add a path when you log a new shape; pino's `*` matches one level only.
+25. **The test database is recreated on every `npm test`** and test files run sequentially (`fileParallelism: false`), since they share one SQLite file. The Prisma CLI is invoked via `process.execPath`, which also works on Windows.
+26. **`Package.resolved` is committed** (the ignore rule was removed) so Phase 2's SPM dependency on the TrueLayer SDK stays reproducible.
+27. **Secondary buttons have a visible pressed state** (`quidSurfaceSecondaryPressed`, `#DFE4E1` light / `#323C37` dark); the previous pressed colour was indistinguishable from resting.
+

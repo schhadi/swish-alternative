@@ -43,6 +43,31 @@ final class ViewModelTests: XCTestCase {
     }
 
     @MainActor
+    func testCancelledLoadIsNotAnError() async {
+        MockServer.shared.reset(latency: 1.0)
+        let viewModel = HomeViewModel(api: mockClient())
+        let loading = Task { await viewModel.load() }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        loading.cancel()
+        await loading.value
+        XCTAssertNil(viewModel.error)
+        XCTAssertNil(viewModel.me)
+        XCTAssertFalse(viewModel.isLoading)
+    }
+
+    @MainActor
+    func testDeleteAccountFailureIsReportedSeparately() async {
+        MockServer.shared.register(.delete, "/me", .empty(status: 500))
+        let viewModel = MeViewModel(api: mockClient())
+        await viewModel.load()
+        let deleted = await viewModel.deleteAccount()
+        XCTAssertFalse(deleted)
+        XCTAssertEqual(viewModel.deleteError, .server(status: 500, message: nil))
+        XCTAssertNil(viewModel.error)
+        XCTAssertNotNil(viewModel.me)
+    }
+
+    @MainActor
     func testHomeSurfacesErrors() async {
         MockServer.shared.register(.get, "/me", .empty(status: 500))
         let viewModel = HomeViewModel(api: mockClient())

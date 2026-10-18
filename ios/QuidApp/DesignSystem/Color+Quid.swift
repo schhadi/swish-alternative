@@ -18,6 +18,8 @@ extension Color {
     static let quidSurface = quidDynamic(light: 0xFFFFFF, dark: 0x1B2220)
     /// Secondary fills: secondary buttons, keypad keys, icon tiles.
     static let quidSurfaceSecondary = quidDynamic(light: 0xEEF1EF, dark: 0x27302C)
+    /// Pressed state for secondary fills: visibly darker than resting, still neutral.
+    static let quidSurfaceSecondaryPressed = quidDynamic(light: 0xDFE4E1, dark: 0x323C37)
     static let quidHairline = quidDynamic(light: 0xEDF0EE, dark: 0x2A3330)
 
     // MARK: Text

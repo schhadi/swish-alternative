@@ -29,6 +29,9 @@ final class APIClient: Sendable {
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            // The caller's Task was cancelled (view disappeared, refresh superseded). Not a user-facing error.
+            throw CancellationError()
         } catch let urlError as URLError {
             throw AppError.from(urlError: urlError)
         } catch {

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Profile, linked bank, limits, notifications, legal, sign out and delete account.
+/// Profile, linked bank, limits, notifications, legal, sign out and delete account, as cards.
 struct MeView: View {
     @Environment(AppEnvironment.self) private var appEnvironment
     @State private var viewModel: MeViewModel
@@ -14,16 +14,28 @@ struct MeView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                profileSection
-                bankSection
-                limitsSection
-                notificationsSection
-                legalSection
-                accountSection
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    profileCard
+                    if viewModel.me == nil, !viewModel.isLoading, let error = viewModel.error {
+                        ErrorStateView(error: error) { await viewModel.load() }
+                    } else {
+                        bankSection
+                        limitsSection
+                    }
+                    notificationsSection
+                    legalSection
+                    accountSection
+                    Text("Quid \(AppConfig.appVersion) (\(AppConfig.buildNumber))\(appEnvironment.isMock ? " · Demo data" : "")")
+                        .font(.quidFootnote)
+                        .foregroundStyle(Color.quidMuted)
+                        .frame(maxWidth: .infinity)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 32)
             }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
+            .scrollIndicators(.hidden)
             .background(Color.quidBackground)
             .navigationTitle("Me")
             .task { await viewModel.load() }
@@ -40,121 +52,171 @@ struct MeView: View {
             } message: {
                 Text("Your bank details and phone number are removed straight away. Past payments stay in other people's activity with your name removed.")
             }
+            .alert("Couldn't delete your account", isPresented: deleteErrorPresented) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(viewModel.deleteError?.userMessage ?? "")
+            }
         }
         .sheet(item: $placeholder) { PhasePlaceholderSheet(placeholder: $0) }
     }
 
-    private var profileSection: some View {
-        Section {
+    private var deleteErrorPresented: Binding<Bool> {
+        Binding(
+            get: { viewModel.deleteError != nil },
+            set: { presented in
+                if !presented {
+                    viewModel.deleteError = nil
+                }
+            }
+        )
+    }
+
+    // MARK: - Sections
+
+    private var profileCard: some View {
+        QuidCard {
             HStack(spacing: 14) {
                 Avatar(name: viewModel.me?.user.displayName ?? "", size: 56)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(viewModel.me?.user.displayName ?? "Loading")
+                    Text(viewModel.me?.user.displayName ?? "Your name")
                         .font(.quidTitle3)
                         .foregroundStyle(Color.quidInk)
-                    Text(MeViewModel.formattedPhone(viewModel.me?.user.phoneE164))
+                    Text(viewModel.me.map { MeViewModel.formattedPhone($0.user.phoneE164) } ?? "+44 0000 000000")
                         .font(.quidSubheadline)
                         .foregroundStyle(Color.quidMuted)
                 }
             }
-            .padding(.vertical, 6)
-            .redacted(reason: viewModel.me == nil ? .placeholder : [])
-            .accessibilityElement(children: .combine)
         }
-        .listRowBackground(Color.quidSurface)
+        .redacted(reason: viewModel.me == nil ? .placeholder : [])
+        .accessibilityElement(children: .combine)
     }
 
     private var bankSection: some View {
-        Section("Linked bank") {
-            if let bank = viewModel.me?.bankAccount {
-                HStack {
-                    MeRow(systemImage: "building.columns", title: bank.bankName)
-                    StatusPill(text: bank.copStatus.label, tone: bank.copStatus.pillTone)
+        VStack(alignment: .leading, spacing: 8) {
+            QuidSectionHeader(title: "Linked bank", size: .small)
+            QuidCard(padding: 0) {
+                VStack(spacing: 0) {
+                    if let bank = viewModel.me?.bankAccount {
+                        HStack(spacing: 12) {
+                            MeRow(systemImage: "building.columns", title: bank.bankName)
+                            StatusPill(text: bank.copStatus.label, tone: bank.copStatus.pillTone)
+                                .padding(.trailing, 16)
+                        }
+                        if let until = bank.coolingOffUntil, until > Date() {
+                            Text("You can receive payments again from \(until.quidReceiptDescription).")
+                                .font(.quidFootnote)
+                                .foregroundStyle(Color.quidPendingText)
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 12)
+                        }
+                        QuidDivider().padding(.leading, 58)
+                        Button {
+                            placeholder = .changeBank
+                        } label: {
+                            MeRow(systemImage: "arrow.triangle.2.circlepath", title: "Change bank account", showsChevron: true)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        MeRow(systemImage: "building.columns", title: viewModel.me == nil ? "Loading" : "No bank linked yet")
+                            .redacted(reason: viewModel.me == nil ? .placeholder : [])
+                    }
                 }
-                if let until = bank.coolingOffUntil, until > Date() {
-                    Text("You can receive payments again from \(until.quidReceiptDescription).")
-                        .font(.quidFootnote)
-                        .foregroundStyle(Color.quidPendingText)
-                }
-                Button {
-                    placeholder = .changeBank
-                } label: {
-                    MeRow(systemImage: "arrow.triangle.2.circlepath", title: "Change bank account")
-                }
-            } else if let error = viewModel.error, viewModel.me == nil {
-                Text(error.userMessage)
-                    .font(.quidSubheadline)
-                    .foregroundStyle(Color.quidFailureText)
-            } else {
-                MeRow(systemImage: "building.columns", title: viewModel.me == nil ? "Loading" : "No bank linked yet")
-                    .redacted(reason: viewModel.me == nil ? .placeholder : [])
             }
         }
-        .listRowBackground(Color.quidSurface)
     }
 
     private var limitsSection: some View {
-        Section {
-            let limits = viewModel.me?.limits
-            MeRow(systemImage: "arrow.up.right", title: "Per payment", value: limits.map { Money(minor: $0.perPaymentMinor).formatted(compact: true) })
-            MeRow(systemImage: "sun.max", title: "Per 24 hours", value: limits.map { Money(minor: $0.rolling24hMinor).formatted(compact: true) })
-            MeRow(systemImage: "calendar", title: "Per 30 days", value: limits.map { Money(minor: $0.rolling30dMinor).formatted(compact: true) })
-        } header: {
-            Text("Limits")
-        } footer: {
+        VStack(alignment: .leading, spacing: 8) {
+            QuidSectionHeader(title: "Limits", size: .small)
+            QuidCard(padding: 0) {
+                let limits = viewModel.me?.limits
+                VStack(spacing: 0) {
+                    MeRow(systemImage: "arrow.up.right", title: "Per payment", value: limits.map { Money(minor: $0.perPaymentMinor).formatted(compact: true) })
+                    QuidDivider().padding(.leading, 58)
+                    MeRow(systemImage: "sun.max", title: "Per 24 hours", value: limits.map { Money(minor: $0.rolling24hMinor).formatted(compact: true) })
+                    QuidDivider().padding(.leading, 58)
+                    MeRow(systemImage: "calendar", title: "Per 30 days", value: limits.map { Money(minor: $0.rolling30dMinor).formatted(compact: true) })
+                }
+                .redacted(reason: viewModel.me == nil ? .placeholder : [])
+            }
             Text("Limits are set by Quid, not your bank, and apply to payments you send.")
+                .font(.quidFootnote)
+                .foregroundStyle(Color.quidMuted)
+                .padding(.horizontal, 4)
         }
-        .listRowBackground(Color.quidSurface)
     }
 
     private var notificationsSection: some View {
-        Section("Notifications") {
-            Toggle(isOn: $notificationsEnabled) {
-                MeRow(systemImage: "bell", title: "Payment updates")
+        VStack(alignment: .leading, spacing: 8) {
+            QuidSectionHeader(title: "Notifications", size: .small)
+            QuidCard(padding: 0) {
+                Toggle(isOn: $notificationsEnabled) {
+                    MeRow(systemImage: "bell", title: "Payment updates")
+                }
+                .tint(Color.quidAccentText)
+                .padding(.trailing, 16)
             }
-            .tint(Color.quidAccent)
         }
-        .listRowBackground(Color.quidSurface)
     }
 
     private var legalSection: some View {
-        Section("Legal") {
-            Link(destination: AppConfig.privacyURL) {
-                MeRow(systemImage: "hand.raised", title: "Privacy policy")
-            }
-            Link(destination: AppConfig.termsURL) {
-                MeRow(systemImage: "doc.text", title: "Terms of use")
+        VStack(alignment: .leading, spacing: 8) {
+            QuidSectionHeader(title: "Legal", size: .small)
+            QuidCard(padding: 0) {
+                VStack(spacing: 0) {
+                    Link(destination: AppConfig.privacyURL) {
+                        MeRow(systemImage: "hand.raised", title: "Privacy policy", showsChevron: true)
+                    }
+                    .buttonStyle(.plain)
+                    QuidDivider().padding(.leading, 58)
+                    Link(destination: AppConfig.termsURL) {
+                        MeRow(systemImage: "doc.text", title: "Terms of use", showsChevron: true)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
-        .listRowBackground(Color.quidSurface)
     }
 
     private var accountSection: some View {
-        Section {
-            Button("Sign out") {
-                appEnvironment.session.signOut()
+        QuidCard(padding: 0) {
+            VStack(spacing: 0) {
+                Button {
+                    appEnvironment.session.signOut()
+                } label: {
+                    Text("Sign out")
+                        .font(.quidBody)
+                        .foregroundStyle(Color.quidInk)
+                        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                QuidDivider().padding(.leading, 16)
+                Button {
+                    showDeleteConfirmation = true
+                } label: {
+                    Text("Delete account")
+                        .font(.quidBody)
+                        .foregroundStyle(Color.quidFailureText)
+                        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isDeleting)
             }
-            .font(.quidBody)
-            .foregroundStyle(Color.quidInk)
-            Button("Delete account", role: .destructive) {
-                showDeleteConfirmation = true
-            }
-            .font(.quidBody)
-            .disabled(viewModel.isDeleting)
-        } footer: {
-            Text("Quid \(AppConfig.appVersion) (\(AppConfig.buildNumber))\(appEnvironment.isMock ? " · Demo data" : "")")
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, 8)
         }
-        .listRowBackground(Color.quidSurface)
     }
 }
 
-/// Settings-style row: icon tile, title, optional trailing value.
+/// Settings-style row: icon tile, title, optional trailing value and chevron. 52pt tall, so always a comfortable target.
 struct MeRow: View {
     let systemImage: String
     let title: String
     var value: String? = nil
+    var showsChevron: Bool = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -167,14 +229,20 @@ struct MeRow: View {
             Text(title)
                 .font(.quidBody)
                 .foregroundStyle(Color.quidInk)
-            Spacer()
+            Spacer(minLength: 8)
             if let value {
                 Text(value)
                     .font(.quidSubheadline)
                     .foregroundStyle(Color.quidMuted)
             }
+            if showsChevron {
+                QuidChevron()
+            }
         }
-        .padding(.vertical, 2)
+        .padding(.horizontal, 16)
+        .frame(minHeight: 52)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }
 

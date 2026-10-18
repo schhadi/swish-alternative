@@ -74,6 +74,8 @@ final class ActivityViewModel {
             self.me = me
             self.payments = (sent.payments + received.payments).sorted { $0.createdAt > $1.createdAt }
             self.error = nil
+        } catch is CancellationError {
+            return
         } catch let appError as AppError {
             self.error = appError
         } catch {

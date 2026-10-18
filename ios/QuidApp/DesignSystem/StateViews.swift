@@ -71,7 +71,7 @@ struct LoadingView: View {
         VStack(spacing: 12) {
             ProgressView()
                 .controlSize(.large)
-                .tint(Color.quidAccent)
+                .tint(Color.quidAccentText)
             Text("Loading")
                 .font(.quidFootnote)
                 .foregroundStyle(Color.quidMuted)

@@ -59,7 +59,7 @@ struct QuidButtonStyle: ButtonStyle {
     private func background(pressed: Bool) -> Color {
         switch style {
         case .primary: return pressed ? .quidAccentPressed : .quidAccent
-        case .secondary: return pressed ? .quidHairline : .quidSurfaceSecondary
+        case .secondary: return pressed ? .quidSurfaceSecondaryPressed : .quidSurfaceSecondary
         case .destructive: return pressed ? .quidFailureTint.opacity(0.7) : .quidFailureTint
         }
     }

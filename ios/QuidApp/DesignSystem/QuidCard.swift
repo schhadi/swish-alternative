@@ -24,25 +24,49 @@ struct QuidDivider: View {
     }
 }
 
-/// Section title with an optional trailing text action ("See all").
+/// Section title with an optional trailing text action ("See all"). The action keeps a 44pt hit target.
 struct QuidSectionHeader: View {
+    enum Size {
+        /// Manrope Bold 20 in ink — Home sections.
+        case large
+        /// Manrope SemiBold 13 in muted — day headers, settings groups.
+        case small
+    }
+
     let title: String
+    var size: Size = .large
     var actionTitle: String? = nil
     var action: (() -> Void)? = nil
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .center) {
             Text(title)
-                .font(.quidTitle3)
-                .foregroundStyle(Color.quidInk)
+                .font(size == .large ? .quidTitle3 : .quidFootnote)
+                .foregroundStyle(size == .large ? Color.quidInk : Color.quidMuted)
             Spacer()
             if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .font(.quidSubheadline)
-                    .tint(Color.quidAccentText)
+                Button(action: action) {
+                    Text(actionTitle)
+                        .font(.quidSubheadline)
+                        .foregroundStyle(Color.quidAccentText)
+                        .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
-        .accessibilityElement(children: .contain)
+        .frame(minHeight: size == .large ? 44 : 24)
+        .padding(.horizontal, size == .small ? 4 : 0)
+    }
+}
+
+/// Trailing disclosure indicator for rows that push a screen (Lists draw this for free; cards do not).
+struct QuidChevron: View {
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(Color.quidMuted.opacity(0.7))
+            .accessibilityHidden(true)
     }
 }
 

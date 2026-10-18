@@ -46,6 +46,8 @@ struct DesignSystemGallery: View {
                     QuidPillButton(title: "Remind", style: .neutral) {}
                 }
 
+                QuidSectionHeader(title: "Section header", actionTitle: "See all", action: {})
+                QuidSectionHeader(title: "Small header", size: .small)
                 QuidCard {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Card").font(.quidHeadline).foregroundStyle(Color.quidInk)

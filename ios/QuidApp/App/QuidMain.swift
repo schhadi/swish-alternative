@@ -5,11 +5,16 @@ import SwiftUI
 struct QuidMain: App {
     @State private var appEnvironment = AppEnvironment.bootstrap()
 
+    init() {
+        QuidAppearance.configure()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(appEnvironment)
-                .tint(Color.quidAccent)
+                // Appearance-aware accent for system chrome (tab bar, back buttons, toggles) so dark mode keeps contrast.
+                .tint(Color.quidAccentText)
         }
     }
 }

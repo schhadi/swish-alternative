@@ -62,7 +62,7 @@ struct CollectionDetailView: View {
                         .foregroundStyle(Color.quidMuted)
                 }
                 ProgressView(value: Double(viewModel.paidCount), total: Double(max(viewModel.memberCount, 1)))
-                    .tint(Color.quidAccent)
+                    .tint(Color.quidAccentText)
                 Text(progressLine)
                     .font(.quidSubheadline)
                     .foregroundStyle(Color.quidMuted)

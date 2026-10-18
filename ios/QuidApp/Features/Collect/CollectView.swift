@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Organisations the user belongs to and their collections. Treasurer tools arrive in Phase 4.
+/// Organisations the user belongs to and their collections, as cards. Treasurer tools arrive in Phase 4.
 struct CollectView: View {
     @State private var viewModel: CollectViewModel
     @State private var placeholder: PhasePlaceholder?
@@ -32,7 +32,7 @@ struct CollectView: View {
                     .padding(16)
                     .frame(maxHeight: .infinity, alignment: .top)
                 } else {
-                    list
+                    content
                 }
             }
             .background(Color.quidBackground)
@@ -56,36 +56,51 @@ struct CollectView: View {
         .sheet(item: $placeholder) { PhasePlaceholderSheet(placeholder: $0) }
     }
 
-    private var list: some View {
-        List {
-            ForEach(viewModel.organisations) { organisation in
-                Section {
-                    if organisation.collections.isEmpty {
-                        Text("No collections yet")
-                            .font(.quidSubheadline)
-                            .foregroundStyle(Color.quidMuted)
-                            .listRowBackground(Color.quidSurface)
-                    }
-                    ForEach(organisation.collections) { collection in
-                        NavigationLink(value: collection) {
-                            CollectionRow(collection: collection)
+    private var content: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                ForEach(viewModel.organisations) { organisation in
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 8) {
+                            Text(organisation.name)
+                                .font(.quidTitle3)
+                                .foregroundStyle(Color.quidInk)
+                            StatusPill(
+                                text: organisation.role == .treasurer ? "Treasurer" : organisation.kind.label,
+                                tone: .neutral
+                            )
                         }
-                        .listRowBackground(Color.quidSurface)
+                        .frame(minHeight: 28)
+                        .accessibilityElement(children: .combine)
+                        if organisation.collections.isEmpty {
+                            QuidCard {
+                                Text("No collections yet")
+                                    .font(.quidSubheadline)
+                                    .foregroundStyle(Color.quidMuted)
+                            }
+                        } else {
+                            QuidCard(padding: 0) {
+                                VStack(spacing: 0) {
+                                    ForEach(Array(organisation.collections.enumerated()), id: \.element.id) { index, collection in
+                                        NavigationLink(value: collection) {
+                                            CollectionRow(collection: collection)
+                                        }
+                                        .buttonStyle(.plain)
+                                        if index < organisation.collections.count - 1 {
+                                            QuidDivider().padding(.leading, 16)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
-                } header: {
-                    HStack(spacing: 8) {
-                        Text(organisation.name)
-                            .font(.quidHeadline)
-                            .foregroundStyle(Color.quidInk)
-                        StatusPill(text: organisation.role == .treasurer ? "Treasurer" : organisation.kind.label, tone: .neutral)
-                    }
-                    .textCase(nil)
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 32)
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(Color.quidBackground)
+        .scrollIndicators(.hidden)
     }
 }
 
@@ -93,27 +108,32 @@ struct CollectionRow: View {
     let collection: CollectionSummaryDTO
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(collection.title)
-                    .font(.quidHeadline)
-                    .foregroundStyle(Color.quidInk)
-                Spacer()
-                if collection.status == .closed {
-                    StatusPill(text: "Closed", tone: .neutral)
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(collection.title)
+                        .font(.quidHeadline)
+                        .foregroundStyle(Color.quidInk)
+                    if collection.status == .closed {
+                        StatusPill(text: "Closed", tone: .neutral)
+                    }
                 }
+                Text(subtitle)
+                    .font(.quidFootnote)
+                    .foregroundStyle(Color.quidMuted)
+                ProgressView(value: Double(collection.paidCount), total: Double(max(collection.memberCount, 1)))
+                    .tint(Color.quidAccentText)
+                Text("\(collection.paidCount) of \(collection.memberCount) paid")
+                    .font(.quidCaption)
+                    .foregroundStyle(Color.quidMuted)
             }
-            Text(subtitle)
-                .font(.quidFootnote)
-                .foregroundStyle(Color.quidMuted)
-            ProgressView(value: Double(collection.paidCount), total: Double(max(collection.memberCount, 1)))
-                .tint(Color.quidAccent)
-            Text("\(collection.paidCount) of \(collection.memberCount) paid")
-                .font(.quidCaption)
-                .foregroundStyle(Color.quidMuted)
+            QuidChevron()
         }
-        .padding(.vertical, 6)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 
     private var subtitle: String {

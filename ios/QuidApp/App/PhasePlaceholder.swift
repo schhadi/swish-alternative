@@ -44,23 +44,29 @@ enum PhasePlaceholder: String, Identifiable {
     }
 }
 
+/// Text scrolls and the sheet can grow to large, so nothing clips at accessibility text sizes.
 struct PhasePlaceholderSheet: View {
     let placeholder: PhasePlaceholder
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(placeholder.title)
-                    .font(.quidTitle2)
-                    .foregroundStyle(Color.quidInk)
-                Spacer()
-                StatusPill(text: "Phase \(placeholder.phase)", tone: .pending)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(placeholder.title)
+                            .font(.quidTitle2)
+                            .foregroundStyle(Color.quidInk)
+                        Spacer()
+                        StatusPill(text: "Phase \(placeholder.phase)", tone: .pending)
+                    }
+                    Text(placeholder.summary)
+                        .font(.quidBody)
+                        .foregroundStyle(Color.quidMuted)
+                }
+                .padding(.top, 8)
             }
-            Text(placeholder.summary)
-                .font(.quidBody)
-                .foregroundStyle(Color.quidMuted)
-            Spacer()
+            .scrollIndicators(.hidden)
             QuidButton(title: "OK", style: .secondary) {
                 dismiss()
             }
@@ -68,7 +74,7 @@ struct PhasePlaceholderSheet: View {
         .padding(24)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.quidBackground)
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
 }

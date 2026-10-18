@@ -20,6 +20,8 @@ final class CollectViewModel {
         do {
             organisations = try await api.send(API.organisations()).organisations
             error = nil
+        } catch is CancellationError {
+            return
         } catch let appError as AppError {
             error = appError
         } catch {
@@ -90,6 +92,8 @@ final class CollectionDetailViewModel {
             organisationName = detail.organisationName
             members = detail.members
             error = nil
+        } catch is CancellationError {
+            return
         } catch let appError as AppError {
             error = appError
         } catch {
