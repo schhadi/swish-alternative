@@ -1,0 +1,38 @@
+# OS / editors
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Node
+node_modules/
+npm-debug.log*
+dist/
+coverage/
+
+# Env and secrets — never commit these
+.env
+.env.*
+!.env.example
+backend/secrets/
+*.pem
+
+# Databases (dev / test SQLite)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Xcode
+ios/build/
+ios/DerivedData/
+ios/**/xcuserdata/
+ios/**/*.xcuserstate
+ios/**/*.xcuserdatad/
+ios/**/.swiftpm/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+ios/**/Package.resolved

@@ -1,0 +1,39 @@
+{
+  "name": "quid-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Quid backend — directory (phone → bank account) and TrueLayer payment orchestration. Never holds money.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.12.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:reset": "prisma migrate reset",
+    "db:studio": "prisma studio",
+    "seed": "tsx src/scripts/seed.ts",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "fastify": "5.12.7",
+    "pino": "10.4.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "pino-pretty": "13.2.0",
+    "prisma": "6.19.3",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  }
+}

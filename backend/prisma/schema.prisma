@@ -1,0 +1,275 @@
+// Quid data model — see docs/SPEC.md section 4.
+// SQLite in dev. For Postgres, change `provider` below to "postgresql"; nothing else in this file is dialect-specific.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum CopStatus {
+  MATCH
+  CLOSE_MATCH
+  NO_MATCH
+  UNCHECKED
+}
+
+enum PaymentStatus {
+  CREATED
+  AUTHORIZING
+  AUTHORIZED
+  EXECUTED
+  SETTLED
+  FAILED
+  CANCELLED
+}
+
+enum RequestStatus {
+  PENDING
+  PAID
+  DECLINED
+  EXPIRED
+}
+
+enum OrgKind {
+  SOCIETY
+  CLUB
+  FLAT
+  OTHER
+}
+
+enum OrgRole {
+  TREASURER
+  MEMBER
+}
+
+enum CollectionStatus {
+  OPEN
+  CLOSED
+}
+
+enum MemberStatus {
+  UNPAID
+  PAID
+}
+
+// ---------- Identity ----------
+
+model User {
+  id          String    @id @default(uuid())
+  // Both phone fields are nullable so account deletion can blank them while keeping the row
+  // (Payment rows reference it and are anonymised, not deleted).
+  phoneE164   String?   @unique
+  phoneHash   String?   @unique
+  displayName String
+  createdAt   DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  deletedAt   DateTime?
+
+  bankAccount           BankAccount?
+  paymentsSent          Payment[]          @relation("PaymentPayer")
+  paymentsReceived      Payment[]          @relation("PaymentPayee")
+  requestsMade          PaymentRequest[]   @relation("RequestRequester")
+  requestsReceived      PaymentRequest[]   @relation("RequestPayer")
+  splitsCreated         Split[]
+  splitShares           SplitShare[]
+  organisationsCreated  Organisation[]
+  orgMemberships        OrgMember[]
+  collectionMemberships CollectionMember[]
+  sessions              Session[]
+}
+
+model BankAccount {
+  id     String  @id @default(uuid())
+  // 1:1 with a user for personal accounts; null for organisation accounts.
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // AES-256-GCM, base64(iv || ciphertext || tag). Decrypted only inside the payment-creation service.
+  sortCodeEnc          String
+  accountNumberEnc     String
+  accountHolderNameEnc String
+
+  providerId String? // TrueLayer provider id, used to preselect the payer's bank
+  copStatus  CopStatus @default(UNCHECKED)
+  verifiedAt DateTime?
+  // Set whenever the account details change; drives the 24h receiving cooling-off.
+  changedAt  DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  organisations Organisation[]
+}
+
+model Session {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model OtpChallenge {
+  id         String    @id @default(uuid())
+  phoneE164  String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phoneE164, createdAt])
+}
+
+// ---------- Payments ----------
+
+model Payment {
+  id String @id @default(uuid())
+
+  // Null when a person without the app pays a collection from the public web page.
+  payerUserId      String?
+  payer            User?   @relation("PaymentPayer", fields: [payerUserId], references: [id])
+  payerDisplayName String? // captured for link payers
+
+  // Exactly one of payeeUserId / collectionId is set.
+  payeeUserId  String?
+  payee        User?       @relation("PaymentPayee", fields: [payeeUserId], references: [id])
+  collectionId String?
+  collection   Collection? @relation(fields: [collectionId], references: [id])
+
+  // Set when the payment settles a PaymentRequest (the request also points back via paymentId).
+  requestId String?
+
+  amountMinor   Int
+  currency      String        @default("GBP")
+  reference     String // <= 18 chars, Faster Payments safe; enforced in code
+  status        PaymentStatus @default(CREATED)
+  tlPaymentId   String?       @unique
+  failureReason String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  settledAt DateTime?
+
+  request          PaymentRequest?
+  collectionMember CollectionMember?
+
+  @@index([payerUserId, createdAt])
+  @@index([payeeUserId, createdAt])
+  @@index([collectionId])
+  @@index([status, updatedAt])
+}
+
+model PaymentRequest {
+  id              String        @id @default(uuid())
+  requesterUserId String
+  requester       User          @relation("RequestRequester", fields: [requesterUserId], references: [id])
+  payerUserId     String
+  payer           User          @relation("RequestPayer", fields: [payerUserId], references: [id])
+  amountMinor     Int
+  reference       String
+  note            String?
+  status          RequestStatus @default(PENDING)
+  paymentId       String?       @unique
+  payment         Payment?      @relation(fields: [paymentId], references: [id])
+  expiresAt       DateTime // default now + 14 days, set in code
+  lastRemindedAt  DateTime? // reminders are rate-limited to once per 24h
+  createdAt       DateTime      @default(now())
+
+  splitShare SplitShare?
+
+  @@index([payerUserId, status])
+  @@index([requesterUserId, createdAt])
+}
+
+model Split {
+  id            String   @id @default(uuid())
+  creatorUserId String
+  creator       User     @relation(fields: [creatorUserId], references: [id])
+  title         String
+  totalMinor    Int
+  createdAt     DateTime @default(now())
+
+  shares SplitShare[]
+}
+
+model SplitShare {
+  id          String         @id @default(uuid())
+  splitId     String
+  split       Split          @relation(fields: [splitId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User           @relation(fields: [userId], references: [id])
+  amountMinor Int
+  requestId   String         @unique
+  request     PaymentRequest @relation(fields: [requestId], references: [id])
+
+  @@index([splitId])
+}
+
+// ---------- Collect ----------
+
+model Organisation {
+  id              String      @id @default(uuid())
+  name            String
+  kind            OrgKind
+  bankAccountId   String
+  bankAccount     BankAccount @relation(fields: [bankAccountId], references: [id])
+  createdByUserId String
+  createdBy       User        @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime    @default(now())
+
+  members     OrgMember[]
+  collections Collection[]
+}
+
+model OrgMember {
+  orgId     String
+  org       Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      OrgRole      @default(MEMBER)
+  createdAt DateTime     @default(now())
+
+  @@id([orgId, userId])
+}
+
+model Collection {
+  id                   String           @id @default(uuid())
+  orgId                String
+  org                  Organisation     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  title                String
+  amountPerPersonMinor Int
+  dueAt                DateTime?
+  slug                 String           @unique // short, url-safe; encoded in the QR as https://<domain>/c/<slug>
+  status               CollectionStatus @default(OPEN)
+  createdAt            DateTime         @default(now())
+
+  members  CollectionMember[]
+  payments Payment[]
+}
+
+model CollectionMember {
+  id           String       @id @default(uuid())
+  collectionId String
+  collection   Collection   @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  userId       String? // null for people who paid from the link without the app
+  user         User?        @relation(fields: [userId], references: [id])
+  displayName  String
+  status       MemberStatus @default(UNPAID)
+  paymentId    String?      @unique
+  payment      Payment?     @relation(fields: [paymentId], references: [id])
+  remindedAt   DateTime?
+  remindCount  Int          @default(0)
+  createdAt    DateTime     @default(now())
+
+  @@index([collectionId, status])
+}

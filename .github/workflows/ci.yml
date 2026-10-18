@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend · npm test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  ios:
+    name: iOS · xcodebuild test
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select the newest Xcode 16
+        run: |
+          if ls -d /Applications/Xcode_16*.app >/dev/null 2>&1; then
+            sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)/Contents/Developer"
+          fi
+          xcodebuild -version
+      - name: Pick an iPhone simulator
+        id: sim
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | jq -r '
+            [ .devices | to_entries[] | select(.key | test("iOS")) | .value[]
+              | select(.isAvailable == true) | select(.name | test("^iPhone [0-9]+$")) ]
+            | sort_by(.name | ltrimstr("iPhone ") | tonumber) | last | .name // empty')
+          if [ -z "$DEVICE" ]; then DEVICE="iPhone 16"; fi
+          echo "Using simulator: $DEVICE"
+          echo "device=$DEVICE" >> "$GITHUB_OUTPUT"
+      - name: Build and test
+        run: |
+          set +e
+          xcodebuild test \
+            -project ios/QuidApp.xcodeproj \
+            -scheme QuidApp \
+            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.device }}" \
+            CODE_SIGNING_ALLOWED=NO \
+            > xcodebuild.log 2>&1
+          STATUS=$?
+          grep -E "error:|Test Suite '.*' (passed|failed)|Executed [0-9]+ tests|\*\* TEST" xcodebuild.log || true
+          exit $STATUS
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
