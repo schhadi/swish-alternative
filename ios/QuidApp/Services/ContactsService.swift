@@ -25,21 +25,25 @@ final class ContactsService {
     }
 
     /// Every UK number in the address book, deduplicated by number, with the client hash ready for lookup.
-    func fetchUKPhones() throws -> [ContactPhone] {
-        let keys = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactPhoneNumbersKey] as [CNKeyDescriptor]
-        let request = CNContactFetchRequest(keysToFetch: keys)
-        request.sortOrder = .givenName
-        var seen = Set<String>()
-        var result: [ContactPhone] = []
-        try store.enumerateContacts(with: request) { contact, _ in
-            let name = [contact.givenName, contact.familyName].filter { !$0.isEmpty }.joined(separator: " ")
-            guard !name.isEmpty else { return }
-            for number in contact.phoneNumbers {
-                guard let e164 = UKPhone.normalise(number.value.stringValue), !seen.contains(e164) else { continue }
-                seen.insert(e164)
-                result.append(ContactPhone(contactId: contact.identifier, displayName: name, phoneE164: e164, hash: PhoneHasher.clientHash(e164)))
+    /// Runs off the main actor: a large address book must not freeze the picker.
+    func fetchUKPhones() async throws -> [ContactPhone] {
+        let store = store
+        return try await Task.detached(priority: .userInitiated) {
+            let keys = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactPhoneNumbersKey] as [CNKeyDescriptor]
+            let request = CNContactFetchRequest(keysToFetch: keys)
+            request.sortOrder = .givenName
+            var seen = Set<String>()
+            var result: [ContactPhone] = []
+            try store.enumerateContacts(with: request) { contact, _ in
+                let name = [contact.givenName, contact.familyName].filter { !$0.isEmpty }.joined(separator: " ")
+                guard !name.isEmpty else { return }
+                for number in contact.phoneNumbers {
+                    guard let e164 = UKPhone.normalise(number.value.stringValue), !seen.contains(e164) else { continue }
+                    seen.insert(e164)
+                    result.append(ContactPhone(contactId: contact.identifier, displayName: name, phoneE164: e164, hash: PhoneHasher.clientHash(e164)))
+                }
             }
-        }
-        return result
+            return result
+        }.value
     }
 }

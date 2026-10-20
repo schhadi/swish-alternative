@@ -43,6 +43,21 @@ function client(fetchImpl: typeof fetch, now = () => 1_000_000) {
 }
 
 describe("TrueLayerClient", () => {
+  it("the verify oracle accepts TrueLayer's recorded request signature and rejects a tampered body", () => {
+    // Recorded request signature from TrueLayer's shared test resources (test/fixtures/truelayer/README.md).
+    const recorded = {
+      publicKeyPem: fixture("ec512-public.pem"),
+      signature: fixture("tl-signature.txt").trim(),
+      method: "POST" as unknown as HttpMethod,
+      path: "/merchant_accounts/a61acaef-ee05-4077-92f3-25543a11bd8d/sweeping",
+      headers: { "Idempotency-Key": "idemp-2076717c-9005-4811-a321-9e0787fa0382" },
+      body: '{"currency":"GBP","max_amount_in_minor":5000000,"name":"Foo???"}',
+    };
+    expect(() => tlSigning.verify(recorded)).not.toThrow();
+    expect(() => tlSigning.verify({ ...recorded, body: recorded.body.replace("5000000", "5000001") })).toThrow();
+    expect(() => tlSigning.verify({ ...recorded, headers: { "Idempotency-Key": "idemp-other" } })).toThrow();
+  });
+
   it("fetches a token, signs the create request with our id as the Idempotency-Key and builds the hosted page URL", async () => {
     const { impl, calls } = scriptedFetch([
       { status: 200, body: { access_token: "tok", expires_in: 3600 } },

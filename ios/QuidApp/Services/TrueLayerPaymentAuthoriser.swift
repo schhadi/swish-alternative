@@ -79,7 +79,7 @@ final class TrueLayerPaymentAuthoriser: PaymentAuthoriser {
             case .userCanceled, .userCanceledAtProvider:
                 return .cancelled
             default:
-                return .failed("Your bank didn't complete the payment. (\(String(describing: error)))")
+                return .failed("The payment didn't go through. Nothing has been sent.")
             }
         }
     }

@@ -72,6 +72,9 @@ final class PayFlowTests: XCTestCase {
         XCTAssertEqual(viewModel.referenceRemaining, 0)
         viewModel.reference = "   "
         XCTAssertFalse(viewModel.referenceIsValid)
+        XCTAssertEqual(PayViewModel.cleanReference("Café for Zoë & José"), "Cafe for Zoe & Jose")
+        XCTAssertEqual(PayViewModel.defaultReference(for: "José Álvarez"), "From Jose")
+        XCTAssertEqual(PayViewModel.defaultReference(for: "李明"), "From Quid")
     }
 
     func testPayIsOnlyPossibleWithinTheLimitAndWithAReceivingPayee() async {

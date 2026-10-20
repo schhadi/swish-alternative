@@ -65,7 +65,7 @@ final class ContactPickerViewModel {
         isLoading = true
         defer { isLoading = false }
         do {
-            let contacts = try contactSource.fetchUKPhones()
+            let contacts = try await contactSource.fetchUKPhones()
             let registered = try await directory.lookup(hashes: contacts.map(\.hash))
             let byHash = Dictionary(registered.map { ($0.hash, $0) }, uniquingKeysWith: { first, _ in first })
             entries = contacts

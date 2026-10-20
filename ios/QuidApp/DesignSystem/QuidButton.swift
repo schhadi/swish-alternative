@@ -2,8 +2,10 @@ import SwiftUI
 
 /// Full-width action button: height 58, radius 18, no gradients or shadows.
 struct QuidButton: View {
-    enum Style {
+    enum Style: Equatable {
         case primary, secondary, destructive
+        /// For full-bleed tinted screens: filled with the screen's ink, labelled in the screen's background colour.
+        case onTint(fill: Color, text: Color)
     }
 
     let title: String
@@ -17,7 +19,7 @@ struct QuidButton: View {
             HStack(spacing: 8) {
                 if isLoading {
                     ProgressView()
-                        .tint(style == .primary ? Color.quidOnAccent : Color.quidInk)
+                        .tint(QuidButtonStyle(style: style).foreground)
                 } else {
                     if let systemImage {
                         Image(systemName: systemImage)
@@ -48,11 +50,12 @@ struct QuidButtonStyle: ButtonStyle {
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 
-    private var foreground: Color {
+    var foreground: Color {
         switch style {
         case .primary: return .quidOnAccent
         case .secondary: return .quidInk
         case .destructive: return .quidFailureText
+        case .onTint(_, let text): return text
         }
     }
 
@@ -61,6 +64,7 @@ struct QuidButtonStyle: ButtonStyle {
         case .primary: return pressed ? .quidAccentPressed : .quidAccent
         case .secondary: return pressed ? .quidSurfaceSecondaryPressed : .quidSurfaceSecondary
         case .destructive: return pressed ? .quidFailureTint.opacity(0.7) : .quidFailureTint
+        case .onTint(let fill, _): return pressed ? fill.opacity(0.85) : fill
         }
     }
 }

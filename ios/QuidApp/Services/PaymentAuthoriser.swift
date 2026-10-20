@@ -61,8 +61,8 @@ final class WebPaymentAuthoriser: PaymentAuthoriser {
                 Task { @MainActor [weak self] in self?.session = nil }
                 if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
                     continuation.resume(returning: .cancelled)
-                } else if let error {
-                    continuation.resume(returning: .failed(error.localizedDescription))
+                } else if error != nil {
+                    continuation.resume(returning: .failed("Couldn't open your bank's payment page."))
                 } else {
                     continuation.resume(returning: .completed)
                 }

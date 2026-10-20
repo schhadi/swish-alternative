@@ -45,10 +45,9 @@ struct PayFlowView: View {
         }
         .onChange(of: viewModel.finished) {
             if viewModel.finished {
-                Task {
-                    await onFinished()
-                    dismiss()
-                }
+                // Drop the cover at once; Home reloads behind it.
+                dismiss()
+                Task { await onFinished() }
             }
         }
     }
@@ -70,6 +69,8 @@ struct PayFlowView: View {
         ToolbarItem(placement: .topBarLeading) {
             Button("Cancel") { dismiss() }
                 .font(.quidSubheadline)
+                // Once the payment is being created or authorised, the only way out is the result screen.
+                .disabled(viewModel.isSubmitting || viewModel.isAuthorising)
                 .accessibilityIdentifier("pay.cancel")
         }
     }

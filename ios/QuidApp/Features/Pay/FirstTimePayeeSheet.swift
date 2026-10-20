@@ -43,7 +43,7 @@ struct FirstTimePayeeSheet: View {
         }
         .padding(24)
         .background(Color.quidBackground)
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(false)
     }

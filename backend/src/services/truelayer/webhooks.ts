@@ -31,6 +31,14 @@ interface Jwks {
   keys: { kid?: string }[];
 }
 
+interface CachedJwks {
+  jwks: Jwks;
+  fetchedAt: number;
+}
+
+/** An unknown kid refetches the key set at most this often per URL, so forged signatures cannot drive fetches. */
+const JWKS_REFETCH_INTERVAL_MS = 60_000;
+
 function jkuOf(signature: string): string {
   let jku: string | undefined;
   try {
@@ -59,19 +67,22 @@ function runVerify(jwks: string, input: WebhookVerifyInput): void {
       path: input.path,
       headers: input.headers,
       body: input.body,
+      // The timestamp must be inside the signature, or its age would mean nothing.
+      requiredHeaders: ["X-Tl-Webhook-Timestamp"],
     });
   } catch (error) {
     throw new WebhookVerificationError(error instanceof Error ? error.message : String(error));
   }
 }
 
-/** Production verifier: trusts only the configured JWKS URLs, caches the key sets, refetches once on an unknown kid. */
+/** Production verifier: trusts only the configured JWKS URLs, caches the key sets, refetches at most once a minute on an unknown kid. */
 export class TrueLayerWebhookVerifier implements WebhookVerifier {
-  private readonly cache = new Map<string, Jwks>();
+  private readonly cache = new Map<string, CachedJwks>();
 
   constructor(
     private readonly allowedJkus: readonly string[],
     private readonly fetchImpl: typeof fetch = globalThis.fetch,
+    private readonly now: () => number = () => Date.now(),
   ) {}
 
   async verify(input: WebhookVerifyInput): Promise<void> {
@@ -86,17 +97,22 @@ export class TrueLayerWebhookVerifier implements WebhookVerifier {
 
   private async jwks(jku: string, kid: string): Promise<Jwks> {
     const cached = this.cache.get(jku);
-    if (cached && cached.keys.some((key) => key.kid === kid)) return cached;
+    if (cached) {
+      if (cached.jwks.keys.some((key) => key.kid === kid)) return cached.jwks;
+      if (this.now() - cached.fetchedAt < JWKS_REFETCH_INTERVAL_MS) {
+        throw new WebhookVerificationError("no key for signature kid");
+      }
+    }
     let response: Response;
     try {
-      response = await this.fetchImpl(jku);
+      response = await this.fetchImpl(jku, { signal: AbortSignal.timeout(5_000) });
     } catch (error) {
       throw new WebhookVerificationError(`could not fetch JWKS: ${error instanceof Error ? error.message : String(error)}`);
     }
     if (!response.ok) throw new WebhookVerificationError(`JWKS fetch returned ${response.status}`);
     const fresh = (await response.json()) as Jwks;
     if (!Array.isArray(fresh.keys)) throw new WebhookVerificationError("JWKS response malformed");
-    this.cache.set(jku, fresh);
+    this.cache.set(jku, { jwks: fresh, fetchedAt: this.now() });
     return fresh;
   }
 }

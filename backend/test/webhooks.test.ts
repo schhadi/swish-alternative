@@ -28,21 +28,32 @@ describe("webhook signature verification", () => {
     await expect(verifier.verify({ ...RECORDED, path: "/webhooks/truelayer" })).rejects.toThrow();
   });
 
-  it("trusts only TrueLayer's JWKS URLs and caches the key set per jku", async () => {
+  it("trusts only TrueLayer's JWKS URLs, caches the key set per jku and refetches at most once a minute", async () => {
     let fetches = 0;
+    let clock = 1_000_000;
     const fakeFetch = (async (url: string | URL | Request) => {
       fetches += 1;
       expect(String(url)).toBe(JKU);
       return new Response(fixture("jwks.json"), { status: 200, headers: { "content-type": "application/json" } });
     }) as unknown as typeof fetch;
-    const trusting = new TrueLayerWebhookVerifier([JKU], fakeFetch);
+    const trusting = new TrueLayerWebhookVerifier([JKU], fakeFetch, () => clock);
     await expect(trusting.verify(RECORDED)).resolves.toBeUndefined();
     await expect(trusting.verify(RECORDED)).resolves.toBeUndefined();
     expect(fetches).toBe(1);
 
+    // A forged signature with an unknown kid cannot make the backend hammer the JWKS endpoint.
+    const unknownKid = signWebhook({ privateKeyPem: fixture("ec512-private.pem"), kid: "not-a-truelayer-key", jku: JKU, path: RECORDED.path, headers: { "X-Tl-Webhook-Timestamp": "2021-11-29T11:42:55Z" }, body: RECORDED.body });
+    const forged = { ...RECORDED, signature: unknownKid, headers: { "x-tl-webhook-timestamp": "2021-11-29T11:42:55Z" } };
+    await expect(trusting.verify(forged)).rejects.toThrow(/no key/);
+    await expect(trusting.verify(forged)).rejects.toThrow(/no key/);
+    expect(fetches).toBe(1);
+    clock += 61_000;
+    await expect(trusting.verify(forged)).rejects.toThrow();
+    expect(fetches).toBe(2);
+
     const sandboxOnly = new TrueLayerWebhookVerifier(["https://webhooks.truelayer-sandbox.com/.well-known/jwks"], fakeFetch);
     await expect(sandboxOnly.verify(RECORDED)).rejects.toThrow(/jku/);
-    expect(fetches).toBe(1);
+    expect(fetches).toBe(2);
   });
 
   it("verifies a signature produced by an independent ES512 signer", async () => {
@@ -52,6 +63,10 @@ describe("webhook signature verification", () => {
     const signature = signWebhook({ privateKeyPem: fixture("ec512-private.pem"), kid: KID, jku: JKU, path: "/webhooks/truelayer", headers, body });
     await expect(verifier.verify({ signature, path: "/webhooks/truelayer", headers, body })).resolves.toBeUndefined();
     await expect(verifier.verify({ signature, path: "/webhooks/truelayer", headers, body: body.replace("tl_1", "tl_2") })).rejects.toThrow();
+
+    // A signature that does not cover the timestamp header is refused, so the logged age always means something.
+    const unsignedTimestamp = signWebhook({ privateKeyPem: fixture("ec512-private.pem"), kid: KID, jku: JKU, path: "/webhooks/truelayer", headers: { "Content-Type": "application/json" }, body });
+    await expect(verifier.verify({ signature: unsignedTimestamp, path: "/webhooks/truelayer", headers, body })).rejects.toThrow(/X-Tl-Webhook-Timestamp/);
   });
 
   it("reads TrueLayer's recorded flat payment webhooks and the older envelope shape", () => {

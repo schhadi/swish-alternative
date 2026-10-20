@@ -5,8 +5,9 @@ import { toPaymentStatus, type PaymentProvider } from "./provider.js";
 import { applyTransition, type TransitionSource } from "./stateMachine.js";
 
 /**
- * Fallback for payments whose webhook never arrived (docs/SPEC.md section 3): anything still in flight two minutes
- * after its last change is asked about directly. Webhooks remain the source of truth; the poll only catches up.
+ * Fallback for payments whose webhook never arrived (docs/SPEC.md section 3): anything still in flight is first asked
+ * about two minutes after its last change, then once per poll interval until it is terminal. Webhooks remain the
+ * source of truth; the poll only catches up.
  */
 export async function pollInFlightPayments(provider: PaymentProvider, log: FastifyBaseLogger, now: Date = new Date()): Promise<{ checked: number; changed: number; abandoned: number }> {
   const abandoned = await failAbandonedCreations(log, now);
@@ -16,8 +17,8 @@ export async function pollInFlightPayments(provider: PaymentProvider, log: Fasti
     where: {
       tlPaymentId: { not: null },
       status: { in: ["CREATED", "AUTHORIZING", "AUTHORIZED"] },
-      updatedAt: { lt: stuckSince },
-      OR: [{ lastPolledAt: null }, { lastPolledAt: { lt: polledBefore } }],
+      // The poll's own bookkeeping bumps updatedAt, so only the first poll waits on the quiet period.
+      OR: [{ lastPolledAt: null, updatedAt: { lt: stuckSince } }, { lastPolledAt: { lt: polledBefore } }],
     },
     select: { id: true, tlPaymentId: true },
     take: 100,
@@ -60,9 +61,10 @@ export async function reconcilePayment(paymentId: string, providerPaymentId: str
     await prisma.payment.updateMany({ where: { id: paymentId }, data: { lastPolledAt: now } });
     return false;
   }
+  // providerStatus is written by the transition together with the status it belongs to, never from a stale read.
   await prisma.payment.updateMany({
     where: { id: paymentId },
-    data: { lastPolledAt: now, providerStatus: state.status, ...(state.providerId ? { providerId: state.providerId } : {}) },
+    data: { lastPolledAt: now, ...(state.providerId ? { providerId: state.providerId } : {}) },
   });
   const mapped = toPaymentStatus(state);
   const outcome = await applyTransition(paymentId, { to: mapped.status, source, failureReason: mapped.failureReason, providerStatus: state.status, at: now }, log);

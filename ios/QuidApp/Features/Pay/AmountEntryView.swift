@@ -11,13 +11,14 @@ struct AmountEntryView: View {
                 VStack(spacing: 20) {
                     header
                     amount
-                    quickAmounts
-                    referenceField
-                    payFromRow
+                    // Right under the amount, so it is in view on small phones while the keypad stays put.
                     if let message = viewModel.inlineMessage {
                         QuidErrorLine(message: message)
                             .padding(.horizontal, 4)
                     }
+                    quickAmounts
+                    referenceField
+                    payFromRow
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
@@ -47,6 +48,10 @@ struct AmountEntryView: View {
         .navigationTitle("Pay")
         .navigationBarTitleDisplayMode(.inline)
         .animation(.easeOut(duration: 0.2), value: referenceFocused)
+        .onChange(of: viewModel.inlineMessage) {
+            guard let message = viewModel.inlineMessage else { return }
+            AccessibilityNotification.Announcement(message).post()
+        }
     }
 
     private var header: some View {
@@ -92,6 +97,8 @@ struct AmountEntryView: View {
                 } label: {
                     Text(Money(minor: minor).formatted(compact: true))
                         .font(.quidSubheadline)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                         .foregroundStyle(viewModel.amountMinor == minor ? Color.quidOnAccent : Color.quidInk)
                         .frame(maxWidth: .infinity, minHeight: 40)
                         .background(viewModel.amountMinor == minor ? Color.quidAccent : Color.quidSurfaceSecondary, in: Capsule())
@@ -184,7 +191,7 @@ struct AmountKeypad: View {
         case .point:
             Text(".").font(.quid(.bold, size: 26, relativeTo: .title2))
         case .delete:
-            Image(systemName: "delete.left").font(.system(size: 22, weight: .semibold))
+            Image(systemName: "delete.left").font(.title2.weight(.semibold))
         }
     }
 

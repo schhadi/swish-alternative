@@ -5,7 +5,7 @@ import Foundation
 protocol ContactSource: AnyObject {
     var authorizationStatus: CNAuthorizationStatus { get }
     func requestAccess() async throws -> Bool
-    func fetchUKPhones() throws -> [ContactPhone]
+    func fetchUKPhones() async throws -> [ContactPhone]
 }
 
 extension ContactsService: ContactSource {}
@@ -29,7 +29,7 @@ final class MockContactSource: ContactSource {
         return accessGranted
     }
 
-    func fetchUKPhones() throws -> [ContactPhone] {
+    func fetchUKPhones() async throws -> [ContactPhone] {
         MockContactSource.contacts.enumerated().map { index, entry in
             ContactPhone(contactId: "mock-\(index)", displayName: entry.name, phoneE164: entry.phone, hash: PhoneHasher.clientHash(entry.phone))
         }

@@ -64,7 +64,7 @@ MockMode equivalents: code `123456`; sort code `999999` is NO_MATCH; an all-lowe
 2. Add Priya's number to a simulator contact, sign in as any other number, link any bank account (MATCH), and tap **Pay**. Allow contacts; Priya appears under "On Quid".
 3. Enter an amount and pay. Because the backend answered `provider: "fake"`, the app opens the backend's approval page (`/dev/authorise/<id>`) in a web session instead of the TrueLayer SDK. Approve: the page redirects to `quid://return/payment`, the result screen shows Pending, then Paid once the fake provider reports executed (2 s) and settled (6 s). Decline shows Failed with "Try again".
 4. Scriptable: `curl -X POST localhost:3000/dev/payments/<providerPaymentId>/advance -H 'content-type: application/json' -d '{"to":"settled"}'`.
-5. Limits are real: £250 per payment, £500 per rolling day, £2,000 per rolling 30 days, counted across payments still in flight.
+5. Limits are real: £250 per payment, £500 per rolling day, £2,000 per rolling 30 days, counted across payments still in flight. A payment abandoned before the approval page (Cancel on the first-time sheet, or closing the web session without pressing Decline) stays AUTHORIZING and keeps counting against those limits, because the fake bank never expires it. Free it with `curl -X POST localhost:3000/dev/payments/<providerPaymentId>/advance -H 'content-type: application/json' -d '{"to":"failed","failureReason":"user_canceled"}'` (the id is in the backend log line for the creation) or start over with `npm run db:reset`.
 
 MockMode (`-mock`): Priya, Tom and Amara can be paid (Amara is a first-time payee and triggers the warning sheet), Jonas has no bank and cannot; any payment turns Paid after about four seconds.
 

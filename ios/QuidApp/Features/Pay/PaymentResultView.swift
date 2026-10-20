@@ -23,6 +23,10 @@ struct PaymentResultView: View {
         .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $placeholder) { PhasePlaceholderSheet(placeholder: $0) }
         .onDisappear { viewModel.stopPolling() }
+        // The title and copy change in place when the poll catches up with the bank; VoiceOver hears the outcome.
+        .onChange(of: kind) {
+            AccessibilityNotification.Announcement("\(title). \(message)").post()
+        }
         .accessibilityIdentifier("pay.result")
     }
 
@@ -51,11 +55,11 @@ struct PaymentResultView: View {
                 AmountText(money: Money(minor: payment.amountMinor, currency: payment.currency), style: .hero, color: ink)
                 Text("to \(payment.counterparty.displayName)")
                     .font(.quidBody)
-                    .foregroundStyle(ink.opacity(0.85))
+                    .foregroundStyle(ink)
             }
             Text(message)
                 .font(.quidSubheadline)
-                .foregroundStyle(ink.opacity(0.85))
+                .foregroundStyle(ink)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 8)
         }
@@ -87,13 +91,13 @@ struct PaymentResultView: View {
             case .paid:
                 QuidButton(title: "Split this with others", style: .secondary) { placeholder = .request }
                     .accessibilityIdentifier("pay.split")
-                QuidButton(title: "Done") { viewModel.done() }
+                QuidButton(title: "Done", style: .onTint(fill: ink, text: background)) { viewModel.done() }
                     .accessibilityIdentifier("pay.done")
             case .pending:
-                QuidButton(title: "Done", style: .secondary) { viewModel.done() }
+                QuidButton(title: "Done", style: .onTint(fill: ink, text: background)) { viewModel.done() }
                     .accessibilityIdentifier("pay.done")
             case .failed:
-                QuidButton(title: "Try again") { viewModel.tryAgain() }
+                QuidButton(title: "Try again", style: .onTint(fill: ink, text: background)) { viewModel.tryAgain() }
                     .accessibilityIdentifier("pay.tryAgain")
                 QuidButton(title: "Done", style: .secondary) { viewModel.done() }
                     .accessibilityIdentifier("pay.done")
@@ -122,7 +126,7 @@ struct PaymentResultView: View {
         }
     }
 
-    /// Paid is the accent green with white ink (contrast 7:1); the others use the tint-and-text pairs from the design system.
+    /// Paid is the accent green with white ink (contrast 6.5:1); the others use the tint-and-text pairs from the design system.
     private var background: Color {
         switch kind {
         case .paid: return .quidAccent

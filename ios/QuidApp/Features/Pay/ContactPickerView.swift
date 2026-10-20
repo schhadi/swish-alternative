@@ -33,6 +33,8 @@ struct ContactPickerView: View {
                             .frame(maxWidth: .infinity, minHeight: 120)
                     } else if viewModel.entries.isEmpty {
                         EmptyStateView(systemImage: "person.crop.circle.badge.questionmark", title: "No UK numbers found", message: "Add a friend's mobile number to your contacts and they'll show up here.")
+                    } else if viewModel.registered.isEmpty && viewModel.others.isEmpty {
+                        EmptyStateView(systemImage: "magnifyingglass", title: "No matches", message: "Nothing matches \u{201C}\(viewModel.searchText.trimmingCharacters(in: .whitespaces))\u{201D}.")
                     } else {
                         registeredSection
                         othersSection

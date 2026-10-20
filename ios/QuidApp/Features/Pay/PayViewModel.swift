@@ -309,13 +309,15 @@ final class PayViewModel {
     }
 
     static func defaultReference(for displayName: String?) -> String {
-        let first = displayName?.split(whereSeparator: { $0.isWhitespace }).first.map(String.init) ?? ""
+        let first = displayName?.split(whereSeparator: { $0.isWhitespace }).first.map { cleanReference(String($0)) } ?? ""
         return cleanReference(first.isEmpty ? "From Quid" : "From \(first)")
     }
 
-    /// Faster Payments-safe: letters, digits, space and & . / - ; at most 18 characters.
+    /// Faster Payments-safe: letters, digits, space and & . / - ; at most 18 characters. Accents fold rather than
+    /// vanish ("José" -> "Jose"); letters with no ASCII form are dropped.
     static func cleanReference(_ raw: String) -> String {
-        let allowed = raw.filter { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == " " || "&./-".contains($0)) }
+        let folded = raw.folding(options: .diacriticInsensitive, locale: nil)
+        let allowed = folded.filter { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == " " || "&./-".contains($0)) }
         return String(allowed.prefix(referenceMaxLength))
     }
 
