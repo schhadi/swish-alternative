@@ -72,7 +72,9 @@ final class PayFlowTests: XCTestCase {
         XCTAssertEqual(viewModel.referenceRemaining, 0)
         viewModel.reference = "   "
         XCTAssertFalse(viewModel.referenceIsValid)
-        XCTAssertEqual(PayViewModel.cleanReference("Café for Zoë & José"), "Cafe for Zoe & Jose")
+        XCTAssertEqual(PayViewModel.cleanReference("Zoë & José"), "Zoe & Jose")
+        // Folding happens before the 18-character cut: the folded "Cafe for Zoe & Jose" is 19 characters.
+        XCTAssertEqual(PayViewModel.cleanReference("Café for Zoë & José"), "Cafe for Zoe & Jos")
         XCTAssertEqual(PayViewModel.defaultReference(for: "José Álvarez"), "From Jose")
         XCTAssertEqual(PayViewModel.defaultReference(for: "李明"), "From Quid")
     }
