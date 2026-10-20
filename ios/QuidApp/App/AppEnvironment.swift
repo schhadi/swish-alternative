@@ -10,6 +10,8 @@ final class AppEnvironment {
     private(set) var isMock: Bool
     /// Bank authorisation and the address book: real in a live build, canned in MockMode.
     private(set) var paymentAuthoriser: any PaymentAuthoriser
+    /// Used for payments the backend created with its fake provider: their approval page is a web page, never the SDK.
+    private(set) var hostedPageAuthoriser: any PaymentAuthoriser
     private(set) var contactSource: any ContactSource
 
     /// Loaded after sign-in. Decides whether onboarding still has steps to run.
@@ -44,6 +46,7 @@ final class AppEnvironment {
         self.isMock = isMock
         self.defaults = defaults
         self.paymentAuthoriser = paymentAuthoriser ?? (isMock ? MockPaymentAuthoriser() : AppEnvironment.liveAuthoriser())
+        self.hostedPageAuthoriser = isMock ? self.paymentAuthoriser : WebPaymentAuthoriser()
         self.contactSource = contactSource ?? (isMock ? MockContactSource() : ContactsService())
         contactsExplainerSeen = defaults.bool(forKey: Keys.contactsExplainerSeen)
         bankLinkSkipped = defaults.bool(forKey: Keys.bankLinkSkipped)
@@ -105,6 +108,7 @@ final class AppEnvironment {
         session = SessionStore(store: store)
         isMock = true
         paymentAuthoriser = MockPaymentAuthoriser()
+        hostedPageAuthoriser = paymentAuthoriser
         contactSource = MockContactSource()
         profile = nil
         profileError = nil

@@ -1,6 +1,6 @@
 # Runbook
 
-How to get from clone to a running app. The TrueLayer sandbox, ngrok and mock-bank sections are filled in during Phase 2; until then they are the checklist from the brief and must be verified against https://docs.truelayer.com before use.
+How to get from clone to a running app, and from there to a payment: first against the built-in fake bank, then against the TrueLayer sandbox once the Console values are in `backend/.env`. The sandbox section still has to be verified against https://docs.truelayer.com (see docs/DECISIONS.md #59).
 
 ## Prerequisites
 
@@ -56,6 +56,33 @@ Tests: Product → Test, or `scripts/ios-test.sh "iPhone 16"`.
 
 MockMode equivalents: code `123456`; sort code `999999` is NO_MATCH; an all-lowercase holder name is CLOSE_MATCH. Launch with `-mock -signed-out` to start on the welcome screen.
 
+## Phase 2: pay someone
+
+### With the fake bank (no TrueLayer account)
+
+1. `backend/.env` has `PAYMENT_PROVIDER=fake` (the default from `.env.example`). Start the backend and run `npm run seed`: Priya (+44 7700 900002) and Tom (…003) get verified fixture accounts.
+2. Add Priya's number to a simulator contact, sign in as any other number, link any bank account (MATCH), and tap **Pay**. Allow contacts; Priya appears under "On Quid".
+3. Enter an amount and pay. Because the backend answered `provider: "fake"`, the app opens the backend's approval page (`/dev/authorise/<id>`) in a web session instead of the TrueLayer SDK. Approve: the page redirects to `quid://return/payment`, the result screen shows Pending, then Paid once the fake provider reports executed (2 s) and settled (6 s). Decline shows Failed with "Try again".
+4. Scriptable: `curl -X POST localhost:3000/dev/payments/<providerPaymentId>/advance -H 'content-type: application/json' -d '{"to":"settled"}'`.
+5. Limits are real: £250 per payment, £500 per rolling day, £2,000 per rolling 30 days, counted across payments still in flight.
+
+MockMode (`-mock`): Priya, Tom and Amara can be paid (Amara is a first-time payee and triggers the warning sheet), Jonas has no bank and cannot; any payment turns Paid after about four seconds.
+
+### With the TrueLayer sandbox
+
+Everything here comes from the product brief and TrueLayer's public repositories; confirm each step against https://docs.truelayer.com before relying on it (docs/DECISIONS.md #59).
+
+1. Console (sandbox): note the `client_id` (prefixed `sandbox-`) and `client_secret`.
+2. Signing key: `openssl ecparam -genkey -name secp521r1 -noout -out backend/secrets/truelayer-private-key.pem` then `openssl ec -in backend/secrets/truelayer-private-key.pem -pubout -out truelayer-public-key.pem`; upload the public key under Payments settings → Signing keys and copy the key id into `TRUELAYER_KID`.
+3. `backend/.env`: `PAYMENT_PROVIDER=truelayer`, `TRUELAYER_ENV=sandbox`, the client id, secret, kid and key path. Hosts default from `TRUELAYER_ENV` (`src/config.ts`, `truelayerHosts()`); override `TRUELAYER_API_BASE_URL` / `TRUELAYER_AUTH_BASE_URL` / `TRUELAYER_HPP_BASE_URL` only if the docs differ. The backend refuses to start if any of the four values is missing.
+4. Redirect URI: register `quid://return/payment` (`PAYMENT_RETURN_URI`) in the Console.
+5. Webhooks: run `scripts/ngrok.sh`, set `PUBLIC_BASE_URL` to the https URL, `TRUST_PROXY=1`, and register `<url>/webhooks/truelayer` in the Console. Deliveries must carry a `Tl-Signature` whose `jku` is `https://webhooks.truelayer-sandbox.com/.well-known/jwks`; anything else is refused with 403 and logged.
+6. Smoke test: `npm run smoke` creates a £1 payment with the mock provider (`SMOKE_PROVIDER_ID`, default `mock-payments-gb-redirect`) to the beneficiary in `SMOKE_SORT_CODE` / `SMOKE_ACCOUNT_NUMBER` / `SMOKE_ACCOUNT_HOLDER_NAME`, prints the authorisation URL and polls the status for two minutes. The first run tells you whether any request shape in `src/services/truelayer/client.ts` needs correcting.
+7. App: the `QuidApp` scheme uses the TrueLayer SDK (sandbox). Set `QUID_TRUELAYER_ENV=live` only for a live build; `QUID_HOSTED_PAGE=1` forces the hosted payment page in a web session for debugging. Install TrueLayer's mock bank app on the simulator to approve.
+8. The fallback poll runs every minute for payments stuck two minutes without a webhook; `GET /payments/:id` is what the app's result screen reads.
+
+If this is run from the cloud session that built it: `docs.truelayer.com`, `api.truelayer-sandbox.com`, `auth.truelayer-sandbox.com` and `webhooks.truelayer-sandbox.com` must be allowed in the environment's network settings first.
+
 ## CI
 
 `.github/workflows/ci.yml`: backend job on Ubuntu (`npm ci`, typecheck, test); iOS job on `macos-15` that picks the newest Xcode 16 and the newest plain-numbered iPhone simulator available, then runs `xcodebuild test` for the `QuidApp` scheme (unit + UI tests). The raw xcodebuild log is uploaded as an artifact. A crashing test host fails the job even when xcodebuild exits 0 (it otherwise relaunches the host and reports the survivors as passed), and on failure the job prints the newest `QuidApp` crash reports and the simulator log lines for the app, so a crash can be read from the job log without the artifact.
@@ -64,14 +91,6 @@ MockMode equivalents: code `123456`; sort code `999999` is NO_MATCH; an all-lowe
 
 `backend/.env` only. Generate real values with `openssl rand -hex 32` for `PHONE_HASH_PEPPER` and `BANK_DATA_KEY`. Rotating the pepper invalidates every stored phone hash; rotating the key makes stored bank details unreadable, so both need a migration plan before go-live.
 
-## TrueLayer sandbox (Phase 2 — to be verified against the docs)
-
-1. Create a Console account; sandbox is the default. Note the `client_id` (prefixed `sandbox-`) and `client_secret`.
-2. Generate an ES512 key pair, upload the public key under Payments settings → Signing keys. Put the private key path in `TRUELAYER_PRIVATE_KEY_PATH` and the key id in `TRUELAYER_KID`.
-3. Add the allowed redirect URIs: the universal link and `quid://return/payment`.
-4. Run `scripts/ngrok.sh`, set `PUBLIC_BASE_URL` to the https URL, register `<url>/webhooks/truelayer` in the Console.
-5. Use the mock provider and TrueLayer's mock bank app on the simulator to exercise app → bank → app.
-6. `scripts/sandbox-smoke.ts` (Phase 2) creates a payment and prints the authorisation URL.
 
 ## Go-live checklist (Phase 5)
 

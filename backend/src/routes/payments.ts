@@ -3,6 +3,7 @@ import { z } from "zod";
 import { currentUser, requireAuth } from "../lib/auth.js";
 import { prisma } from "../lib/db.js";
 import { paymentDTO } from "../lib/dto.js";
+import { env } from "../config.js";
 import { HttpError } from "../lib/errors.js";
 import { LIMITS } from "../limits.js";
 import { createPeerPayment } from "../services/payments/create.js";
@@ -61,6 +62,8 @@ export async function paymentRoutes(app: FastifyInstance): Promise<void> {
       resourceToken: created.resourceToken,
       authorisationUrl: created.authorisationUrl,
       firstTimePayee: created.firstTimePayee,
+      // "fake" means the dev approval page (web), "truelayer" means the SDK or hosted page.
+      provider: env.PAYMENT_PROVIDER,
       payee: {
         userId: created.payee.userId,
         displayName: created.payee.displayName,

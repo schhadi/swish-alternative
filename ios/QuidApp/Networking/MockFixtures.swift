@@ -122,6 +122,7 @@ enum MockFixtures {
                       "resourceToken": "mock_token_\(created.id)",
                       "authorisationUrl": "https://mock.quid.invalid/authorise/\(created.id)",
                       "firstTimePayee": \(!paidBefore),
+                      "provider": "mock",
                       "payee": {"userId": "\(body.payeeUserId)", "displayName": "\(person.name)", "accountHolderName": "\(person.accountHolderName)", "copStatus": "MATCH", "bankName": "\(person.bankName ?? "")"},
                       "payment": \(createdPaymentJSON(created))
                     }

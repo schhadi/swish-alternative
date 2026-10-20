@@ -241,6 +241,8 @@ struct PaymentCreateResponseDTO: Codable, Hashable, Sendable {
     let resourceToken: String
     let authorisationUrl: String?
     let firstTimePayee: Bool
+    /// "truelayer" (SDK or hosted page), "fake" (the backend's dev approval page), "mock" (MockMode).
+    let provider: String?
     let payee: PayeeDTO
     let payment: PaymentDTO
 }

@@ -9,8 +9,8 @@ The full product spec is in [`docs/SPEC.md`](docs/SPEC.md). Work happens phase b
 | Phase | Scope | State |
 | --- | --- | --- |
 | 0 | Scaffold: repo layout, backend skeleton + Prisma schema, iOS project + design system + `APIClient` + MockMode, CI, docs | Done, reviewed |
-| 1 | Onboarding + directory: OTP sign-in, name, bank account with Confirmation of Payee, providers, contacts hashing + lookup, real (empty) feeds | **Done, awaiting review** |
-| 2 | Pay end to end in the TrueLayer sandbox | Not started |
+| 1 | Onboarding + directory: OTP sign-in, name, bank account with Confirmation of Payee, providers, contacts hashing + lookup, real (empty) feeds | Done, reviewed |
+| 2 | Pay end to end: limits, state machine, signed webhooks, polling, SDK authorisation, result screen; works against the built-in fake bank. Sandbox run pending: TrueLayer hosts were unreachable from the build environment (docs/DECISIONS.md #59) | **Done, awaiting review** |
 | 3 | Requests and splits | Not started |
 | 4 | Collect | Not started |
 | 5 | Hardening | Not started |

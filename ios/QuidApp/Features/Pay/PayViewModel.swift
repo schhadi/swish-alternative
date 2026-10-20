@@ -221,7 +221,9 @@ final class PayViewModel {
 
     private func authorise(_ response: PaymentCreateResponseDTO) async {
         isAuthorising = true
-        let outcome = await authoriser.authorise(
+        // A backend running PAYMENT_PROVIDER=fake sends the payer to its own approval page, not to TrueLayer.
+        let chosen: any PaymentAuthoriser = response.provider == "fake" ? environment.hostedPageAuthoriser : authoriser
+        let outcome = await chosen.authorise(
             AuthorisationRequest(
                 paymentId: response.paymentId,
                 providerPaymentId: response.tlPaymentId,

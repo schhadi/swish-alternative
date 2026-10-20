@@ -38,6 +38,7 @@ describe("POST /payments", () => {
     expect(response.statusCode).toBe(201);
     const body = response.json();
     expect(body.firstTimePayee).toBe(true);
+    expect(body.provider).toBe("fake");
     expect(body.resourceToken).toMatch(/^fake_token_/);
     expect(body.authorisationUrl).toContain("/dev/authorise/");
     expect(body.payee).toEqual({ userId: priyaId, displayName: "Priya Patel", accountHolderName: "Priya Patel", copStatus: "MATCH", bankName: "Starling" });
