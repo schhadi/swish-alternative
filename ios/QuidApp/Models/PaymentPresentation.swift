@@ -35,6 +35,16 @@ extension PaymentStatus {
         }
     }
 
+    /// What to tell the user about a failed or cancelled payment. `failureReason` is a provider code kept for
+    /// support and logs, never shown verbatim.
+    var failureMessage: String? {
+        switch self {
+        case .cancelled: return "You cancelled the payment in your bank app. Nothing has been sent."
+        case .failed: return "The payment didn't go through. Nothing has been sent."
+        case .created, .authorizing, .authorized, .executed, .settled: return nil
+        }
+    }
+
     /// Final states never change again; pending ones are polled or updated by webhooks.
     var isFinal: Bool {
         switch self {

@@ -29,11 +29,16 @@ struct PayFlowView: View {
         }
         .tint(Color.quidAccentText)
         .interactiveDismissDisabled(viewModel.path.last == .result || viewModel.isAuthorising)
-        .sheet(isPresented: firstTimeSheetPresented) {
+        .sheet(isPresented: firstTimeSheetPresented, onDismiss: {
+            // The SDK presents on the top view controller, so it must start after the sheet is fully gone.
+            if viewModel.confirmedFirstTime != nil {
+                Task { await viewModel.confirmFirstTime() }
+            }
+        }) {
             if let pending = viewModel.pendingFirstTime {
                 FirstTimePayeeSheet(
                     response: pending,
-                    onPay: { Task { await viewModel.confirmFirstTime() } },
+                    onPay: { viewModel.acceptFirstTime() },
                     onCancel: { viewModel.cancelFirstTime() }
                 )
             }

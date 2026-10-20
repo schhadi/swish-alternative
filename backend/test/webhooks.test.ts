@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "../src/lib/db.js";
-import { StaticJwksWebhookVerifier, TrueLayerWebhookVerifier, mapWebhookEvent } from "../src/services/truelayer/webhooks.js";
+import { StaticJwksWebhookVerifier, TrueLayerWebhookVerifier, mapWebhookEvent, parseWebhookEvent } from "../src/services/truelayer/webhooks.js";
 import { bearer, createTestApp, fixture, linkBank, resetDatabase, signIn, type TestContext } from "./helpers.js";
 import { signWebhook } from "./support/webhookSigner.js";
 
@@ -54,13 +54,39 @@ describe("webhook signature verification", () => {
     await expect(verifier.verify({ signature, path: "/webhooks/truelayer", headers, body: body.replace("tl_1", "tl_2") })).rejects.toThrow();
   });
 
-  it("maps event types to statuses and ignores the rest", () => {
-    expect(mapWebhookEvent({ event_type: "payment_executed", event_id: "1", event_body: { payment_id: "tl" } })).toMatchObject({ providerPaymentId: "tl", status: "EXECUTED" });
-    expect(mapWebhookEvent({ event_type: "payment_settled", event_id: "1", event_body: { payment_id: "tl" } })).toMatchObject({ status: "SETTLED" });
-    expect(mapWebhookEvent({ event_type: "payment_authorized", event_id: "1", event_body: { payment_id: "tl" } })).toMatchObject({ status: "AUTHORIZED" });
-    expect(mapWebhookEvent({ event_type: "payment_failed", event_id: "1", event_body: { payment_id: "tl", failure_reason: "canceled" } })).toMatchObject({ status: "CANCELLED", failureReason: "canceled" });
-    expect(mapWebhookEvent({ event_type: "payment_failed", event_id: "1", event_body: { payment_id: "tl", failure_reason: "insufficient_funds" } })).toMatchObject({ status: "FAILED" });
-    expect(mapWebhookEvent({ event_type: "payout_settled", event_id: "1", event_body: { payment_id: "tl" } })).toMatchObject({ status: null });
+  it("reads TrueLayer's recorded flat payment webhooks and the older envelope shape", () => {
+    // Recorded sandbox payloads from TrueLayer's signing repository (ruby/test/resources), identifiers changed.
+    const executed = parseWebhookEvent(JSON.stringify({
+      type: "payment_executed",
+      event_version: 1,
+      event_id: "2606ed6d-5c89-4bd9-8f95-40e42c95ca71",
+      payment_id: "a62ba556-4b35-4628-9d8c-42302d2e5d02",
+      payment_method: { type: "bank_transfer", provider_id: "mock-payments-gb-redirect", scheme_id: "faster_payments_service" },
+      executed_at: "2023-06-09T15:40:30.561Z",
+      payment_source: { account_identifiers: [{ type: "sort_code_account_number", sort_code: "040668", account_number: "00000871" }], account_holder_name: "JOHN SANDBRIDGE" },
+    }));
+    expect(executed).toEqual({ event_type: "payment_executed", event_id: "2606ed6d-5c89-4bd9-8f95-40e42c95ca71", paymentId: "a62ba556-4b35-4628-9d8c-42302d2e5d02", failureReason: null });
+    expect(mapWebhookEvent(executed)).toMatchObject({ providerPaymentId: "a62ba556-4b35-4628-9d8c-42302d2e5d02", status: "EXECUTED" });
+
+    const failed = parseWebhookEvent(JSON.stringify({
+      type: "payment_failed",
+      event_version: 1,
+      event_id: "6f00897f-f8c8-4ffb-93a3-cfbd311396e2",
+      payment_id: "2c4db314-b509-4d68-b883-a34ca5fa7b72",
+      payment_method: { type: "bank_transfer" },
+      failed_at: "2023-07-11T17:42:24.123Z",
+      failure_stage: "authorization_required",
+      failure_reason: "expired",
+    }));
+    expect(mapWebhookEvent(failed)).toMatchObject({ status: "FAILED", failureReason: "expired" });
+
+    const envelope = parseWebhookEvent('{"event_type":"payment_settled","event_schema_version":1,"event_id":"e","event_body":{"payment_id":"tl"}}');
+    expect(mapWebhookEvent(envelope)).toMatchObject({ providerPaymentId: "tl", status: "SETTLED" });
+    expect(mapWebhookEvent(parseWebhookEvent('{"type":"payment_authorized","event_id":"a","payment_id":"tl"}'))).toMatchObject({ status: "AUTHORIZED" });
+    expect(mapWebhookEvent(parseWebhookEvent('{"type":"payment_failed","event_id":"c","payment_id":"tl","failure_reason":"canceled"}'))).toMatchObject({ status: "CANCELLED", failureReason: "canceled" });
+    expect(mapWebhookEvent(parseWebhookEvent('{"type":"payout_settled","event_id":"p","payment_id":"tl"}'))).toMatchObject({ status: null });
+    expect(() => parseWebhookEvent('{"event_id":"x"}')).toThrow();
+    expect(() => parseWebhookEvent('{"type":"payment_failed"}')).toThrow();
   });
 });
 
@@ -113,7 +139,7 @@ describe("POST /webhooks/truelayer", () => {
   }
 
   it("applies executed then settled, and acknowledges a redelivery without applying it twice", async () => {
-    const executed = await deliver({ event_type: "payment_executed", event_schema_version: 1, event_id: "evt-1", event_body: { payment_id: tlPaymentId } });
+    const executed = await deliver({ type: "payment_executed", event_version: 1, event_id: "evt-1", payment_id: tlPaymentId, payment_method: { type: "bank_transfer" } });
     expect(executed.statusCode).toBe(200);
     expect(executed.json()).toEqual({ received: true, applied: true });
     expect(await status()).toBe("EXECUTED");
@@ -122,7 +148,7 @@ describe("POST /webhooks/truelayer", () => {
     expect(settled.json()).toEqual({ received: true, applied: true });
     expect(await status()).toBe("SETTLED");
 
-    const again = await deliver({ event_type: "payment_executed", event_schema_version: 1, event_id: "evt-1", event_body: { payment_id: tlPaymentId } });
+    const again = await deliver({ type: "payment_executed", event_version: 1, event_id: "evt-1", payment_id: tlPaymentId });
     expect(again.statusCode).toBe(200);
     expect(again.json()).toEqual({ received: true, duplicate: true });
     expect(await status()).toBe("SETTLED");
@@ -144,43 +170,71 @@ describe("POST /webhooks/truelayer", () => {
     expect(row.failureReason).toBe("insufficient_funds");
   });
 
-  it("refuses unsigned, tampered and stale deliveries without touching the payment", async () => {
-    const event = { event_type: "payment_settled", event_id: "evt-x", event_body: { payment_id: tlPaymentId } };
+  it("refuses unsigned and tampered deliveries without touching the payment, but accepts an old timestamp", async () => {
+    const event = { type: "payment_settled", event_id: "evt-x", payment_id: tlPaymentId };
     expect((await deliver(event, { unsigned: true })).statusCode).toBe(403);
-    expect((await deliver(event, { body: JSON.stringify({ ...event, event_body: { payment_id: "other" } }) })).statusCode).toBe(403);
+    expect((await deliver(event, { body: JSON.stringify({ ...event, payment_id: "other" }) })).statusCode).toBe(403);
     expect(await status()).toBe("AUTHORIZING");
     expect(await prisma.webhookEvent.count()).toBe(0);
 
-    const strict = await createTestApp({ webhookMaxAgeSeconds: 60 });
+    // A retried delivery may carry its original timestamp; age is logged, never a reason to drop a valid event.
+    const body = JSON.stringify(event);
+    const headers = { "X-Tl-Webhook-Timestamp": "2021-11-29T11:42:55Z", "Content-Type": "application/json" };
+    const signature = signWebhook({ privateKeyPem: fixture("ec512-private.pem"), kid: KID, jku: JKU, path: "/webhooks/truelayer", headers, body });
+    const old = await ctx.app.inject({
+      method: "POST",
+      url: "/webhooks/truelayer",
+      headers: { "content-type": "application/json", "x-tl-webhook-timestamp": headers["X-Tl-Webhook-Timestamp"], "tl-signature": signature },
+      payload: body,
+    });
+    expect(old.statusCode).toBe(200);
+    expect(old.json()).toEqual({ received: true, applied: true });
+    expect(await status()).toBe("SETTLED");
+  });
+
+  it("records the event only after the transition, so a failed write is retried rather than swallowed", async () => {
+    const realPayment = prisma.payment;
+    let failures = 1;
+    Object.defineProperty(prisma, "payment", {
+      configurable: true,
+      get: () =>
+        new Proxy(realPayment, {
+          get(target, property, receiver) {
+            if (property === "updateMany" && failures > 0) {
+              failures -= 1;
+              return () => Promise.reject(new Error("database went away"));
+            }
+            return Reflect.get(target, property, receiver);
+          },
+        }),
+    });
     try {
-      const body = JSON.stringify(event);
-      const headers = { "X-Tl-Webhook-Timestamp": "2021-11-29T11:42:55Z", "Content-Type": "application/json" };
-      const signature = signWebhook({ privateKeyPem: fixture("ec512-private.pem"), kid: KID, jku: JKU, path: "/webhooks/truelayer", headers, body });
-      const old = await strict.app.inject({
-        method: "POST",
-        url: "/webhooks/truelayer",
-        headers: { "content-type": "application/json", "x-tl-webhook-timestamp": headers["X-Tl-Webhook-Timestamp"], "tl-signature": signature },
-        payload: body,
-      });
-      expect(old.statusCode).toBe(403);
-      expect(old.json().error).toBe("webhook_stale");
+      const first = await deliver({ type: "payment_settled", event_id: "evt-retry", payment_id: tlPaymentId });
+      expect(first.statusCode).toBe(500);
+      expect(await status()).toBe("AUTHORIZING");
+      expect(await prisma.webhookEvent.count()).toBe(0);
     } finally {
-      await strict.app.close();
+      Object.defineProperty(prisma, "payment", { configurable: true, get: () => realPayment });
     }
+    const retry = await deliver({ type: "payment_settled", event_id: "evt-retry", payment_id: tlPaymentId });
+    expect(retry.statusCode).toBe(200);
+    expect(retry.json()).toEqual({ received: true, applied: true });
+    expect(await status()).toBe("SETTLED");
+    expect(await prisma.webhookEvent.count()).toBe(1);
   });
 
   it("acknowledges unknown payments and unknown event types so TrueLayer stops retrying", async () => {
-    const unknown = await deliver({ event_type: "payment_settled", event_id: "evt-u", event_body: { payment_id: "tl_nobody" } });
+    const unknown = await deliver({ type: "payment_settled", event_id: "evt-u", payment_id: "tl_nobody" });
     expect(unknown.statusCode).toBe(200);
     expect(unknown.json()).toEqual({ received: true, applied: false });
-    const other = await deliver({ event_type: "payout_settled", event_id: "evt-o", event_body: { transaction_id: "t" } });
+    const other = await deliver({ type: "payout_settled", event_id: "evt-o", transaction_id: "t" });
     expect(other.json()).toEqual({ received: true, applied: false });
     const malformed = await deliver({ hello: "world" });
     expect(malformed.statusCode).toBe(400);
   });
 
   it("does not require a bearer token and is not rate limited like user routes", async () => {
-    const response = await deliver({ event_type: "payment_authorized", event_id: "evt-a", event_body: { payment_id: tlPaymentId } });
+    const response = await deliver({ type: "payment_authorized", event_id: "evt-a", payment_id: tlPaymentId });
     expect(response.statusCode).toBe(200);
     expect(await status()).toBe("AUTHORIZED");
   });

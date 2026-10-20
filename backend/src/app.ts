@@ -43,8 +43,6 @@ export interface BuildAppOptions {
   authRequestsPerMinutePerIp?: number;
   /** Fastify's trustProxy (default env.TRUST_PROXY). Tests set it to prove per-IP limits key on X-Forwarded-For. */
   trustProxy?: boolean | number | string | string[];
-  /** Webhook replay window (default LIMITS.webhookMaxAgeSeconds); tests pass Infinity to replay recorded fixtures. */
-  webhookMaxAgeSeconds?: number;
 }
 
 /** PAYMENT_PROVIDER=truelayer needs the Console credentials and the signing key; fail at startup, not at the first payment. */
@@ -136,7 +134,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.register(directoryRoutes);
   app.register(paymentRoutes);
   app.register(placeholderRoutes);
-  app.register(webhookRoutes, { maxAgeSeconds: options.webhookMaxAgeSeconds ?? LIMITS.webhookMaxAgeSeconds });
+  app.register(webhookRoutes);
   if (services.paymentProvider instanceof FakePaymentProvider) {
     app.register(devRoutes, { provider: services.paymentProvider, returnUri: env.PAYMENT_RETURN_URI });
   }

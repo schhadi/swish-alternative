@@ -120,6 +120,7 @@ final class PayFlowTests: XCTestCase {
         await viewModel.submit()
         XCTAssertNotNil(viewModel.pendingFirstTime)
         XCTAssertEqual(viewModel.pendingFirstTime?.payee.accountHolderName, "Amara Osei")
+        XCTAssertEqual(viewModel.pendingFirstTime?.firstTimePayee, true)
         XCTAssertEqual(viewModel.pendingFirstTime?.payee.bankName, "Lloyds")
         XCTAssertTrue(authoriser.requests.isEmpty)
         XCTAssertTrue(viewModel.path.isEmpty)
@@ -129,10 +130,38 @@ final class PayFlowTests: XCTestCase {
         XCTAssertNil(viewModel.created)
 
         await viewModel.submit()
+        viewModel.acceptFirstTime()
+        XCTAssertNil(viewModel.pendingFirstTime, "the sheet closes first")
+        XCTAssertNotNil(viewModel.confirmedFirstTime)
+        XCTAssertTrue(authoriser.requests.isEmpty, "the bank is not opened until the sheet has gone")
+        viewModel.cancelFirstTime()
+        XCTAssertNotNil(viewModel.created, "a dismissal after Pay must not throw the payment away")
         await viewModel.confirmFirstTime()
         XCTAssertEqual(authoriser.requests.count, 1)
         XCTAssertEqual(viewModel.path, [.result])
         viewModel.stopPolling()
+
+        // A repeat payment to the same person carries no bank-held name.
+        let (again, _) = await self.viewModel(target: priya)
+        again.setQuickAmount(500)
+        await again.submit()
+        XCTAssertNil(again.created?.payee.accountHolderName)
+        again.stopPolling()
+    }
+
+    func testServerFailureIsExplainedInPlainWords() async throws {
+        let (viewModel, _) = await viewModel(target: priya)
+        let failed = MockFixtures.createdPaymentJSON(MockCreatedPayment(id: "p_m1", payeeUserId: "u_priya", payeeName: "Priya Patel", amountMinor: 500, reference: "From Sam", createdAt: Date()))
+            .replacingOccurrences(of: "\"status\": \"AUTHORIZING\"", with: "\"status\": \"FAILED\"")
+            .replacingOccurrences(of: "\"failureReason\": null", with: "\"failureReason\": \"provider_error\"")
+        MockServer.shared.register(.get, "/payments/p_m1", .json(failed))
+        viewModel.setQuickAmount(500)
+        await viewModel.submit()
+        let deadline = Date().addingTimeInterval(3)
+        while viewModel.payment?.status != .failed, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(viewModel.resultKind, .failed("The payment didn't go through. Nothing has been sent."))
     }
 
     func testCancellingInTheBankShowsFailedWithTryAgain() async {

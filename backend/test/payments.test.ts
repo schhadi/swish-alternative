@@ -56,6 +56,7 @@ describe("POST /payments", () => {
     await prisma.payment.update({ where: { id: first.json().paymentId }, data: { status: "EXECUTED" } });
     const second = await pay(samToken, { payeeUserId: priyaId, amountMinor: 500, reference: "Two" });
     expect(second.json().firstTimePayee).toBe(false);
+    expect(second.json().payee.accountHolderName).toBeNull();
   });
 
   it("uses the payer's linked bank for preselection and shows it in the feed", async () => {

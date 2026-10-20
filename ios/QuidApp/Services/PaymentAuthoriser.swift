@@ -103,7 +103,7 @@ final class WindowAnchorProvider: NSObject, ASWebAuthenticationPresentationConte
     @MainActor
     static func topViewController() -> UIViewController? {
         var top = keyWindow()?.rootViewController
-        while let presented = top?.presentedViewController {
+        while let presented = top?.presentedViewController, !presented.isBeingDismissed {
             top = presented
         }
         return top

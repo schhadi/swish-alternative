@@ -32,9 +32,13 @@ export const LIMITS = {
   authorizingPollAfterMinutes: 2,
   /** How often the fallback poll runs, and the least time between two polls of the same payment */
   pollIntervalSeconds: 60,
+  /** A CREATED row that never reached the provider (crash mid-call) is failed after this long, releasing its allowance */
+  createdWithoutProviderExpiryMinutes: 10,
+  /** Upper bound on one call to the payment provider, so the app's own 20 s timeout sees a real answer */
+  providerRequestTimeoutMs: 15_000,
   /** POST /payments per user per minute */
   paymentCreationsPerMinute: 20,
-  /** A webhook whose signed timestamp is older than this is refused (replay protection) */
+  /** A webhook whose signed timestamp is further from now than this is logged at warn (never refused) */
   webhookMaxAgeSeconds: 300,
 } as const;
 

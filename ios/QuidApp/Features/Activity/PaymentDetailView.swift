@@ -23,7 +23,7 @@ struct PaymentDetailView: View {
                 .padding(.top, 16)
                 .accessibilityElement(children: .combine)
 
-                if let reason = payment.failureReason {
+                if let reason = payment.status.failureMessage {
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "exclamationmark.circle")
                             .accessibilityHidden(true)

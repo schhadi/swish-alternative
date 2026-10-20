@@ -24,7 +24,7 @@ struct FirstTimePayeeSheet: View {
                     Text("Their bank holds this account as")
                         .font(.quidFootnote)
                         .foregroundStyle(Color.quidMuted)
-                    Text("\u{201C}\(response.payee.accountHolderName)\u{201D}")
+                    Text("\u{201C}\(response.payee.accountHolderName ?? response.payee.displayName)\u{201D}")
                         .font(.quidHeadline)
                         .foregroundStyle(Color.quidInk)
                     Text("\(response.payee.bankName) · \(response.payee.copStatus.label)")

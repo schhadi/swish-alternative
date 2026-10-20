@@ -50,7 +50,6 @@ export async function createTestApp(options: BuildAppOptions = {}): Promise<Test
       ...options.services,
     },
     authRequestsPerMinutePerIp: options.authRequestsPerMinutePerIp ?? 10_000,
-    webhookMaxAgeSeconds: options.webhookMaxAgeSeconds ?? Number.POSITIVE_INFINITY,
   });
   await app.ready();
   return { app, sms, provider };

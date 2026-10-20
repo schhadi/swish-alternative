@@ -123,7 +123,7 @@ enum MockFixtures {
                       "authorisationUrl": "https://mock.quid.invalid/authorise/\(created.id)",
                       "firstTimePayee": \(!paidBefore),
                       "provider": "mock",
-                      "payee": {"userId": "\(body.payeeUserId)", "displayName": "\(person.name)", "accountHolderName": "\(person.accountHolderName)", "copStatus": "MATCH", "bankName": "\(person.bankName ?? "")"},
+                      "payee": {"userId": "\(body.payeeUserId)", "displayName": "\(person.name)", "accountHolderName": \(paidBefore ? "null" : "\"\(person.accountHolderName)\""), "copStatus": "MATCH", "bankName": "\(person.bankName ?? "")"},
                       "payment": \(createdPaymentJSON(created))
                     }
                     """,
@@ -300,7 +300,7 @@ enum MockFixtures {
             payment(id: "p_1002", payer: meUserId, payee: "u_amara", amount: 4500, reference: "Rent share", status: "AUTHORIZING", created: iso(minutesAgo: 20), settled: nil, counterparty: amara),
             payment(id: "p_1003", payer: meUserId, payee: "u_tom", amount: 850, reference: "Lunch", status: "EXECUTED", created: iso(daysAgo: 1, hour: 13), settled: nil, counterparty: tom),
             payment(id: "p_1004", payer: meUserId, payee: nil, collectionId: "col_trip", amount: 3000, reference: "Trip deposit", status: "SETTLED", created: iso(daysAgo: 3, hour: 18), settled: iso(daysAgo: 3, hour: 18), counterparty: hockeyClub),
-            payment(id: "p_1005", payer: meUserId, payee: "u_jonas", amount: 2000, reference: "Tickets", status: "FAILED", created: iso(daysAgo: 5, hour: 20), settled: nil, failureReason: "Your bank declined the payment.", counterparty: jonas),
+            payment(id: "p_1005", payer: meUserId, payee: "u_jonas", amount: 2000, reference: "Tickets", status: "FAILED", created: iso(daysAgo: 5, hour: 20), settled: nil, failureReason: "provider_rejected", counterparty: jonas),
         ]
     }
 

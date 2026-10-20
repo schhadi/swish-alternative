@@ -38,6 +38,8 @@ final class PayViewModel {
     private(set) var created: PaymentCreateResponseDTO?
     /// Set when the server flagged a first-time payee; the warning sheet is showing.
     private(set) var pendingFirstTime: PaymentCreateResponseDTO?
+    /// The user tapped Pay on the sheet; authorisation starts once the sheet has gone (the SDK needs the screen).
+    private(set) var confirmedFirstTime: PaymentCreateResponseDTO?
     private(set) var outcome: AuthorisationOutcome?
     private(set) var isAuthorising = false
 
@@ -125,7 +127,7 @@ final class PayViewModel {
             case .executed, .settled:
                 return .paid
             case .failed, .cancelled:
-                return .failed(payment?.failureReason ?? (status == .cancelled ? "The payment was cancelled." : "The payment didn't go through."))
+                return .failed(status.failureMessage ?? "The payment didn't go through. Nothing has been sent.")
             case .created, .authorizing, .authorized:
                 break
             }
@@ -202,14 +204,21 @@ final class PayViewModel {
         }
     }
 
-    func confirmFirstTime() async {
-        guard let response = pendingFirstTime else { return }
+    /// Pay tapped on the sheet: remember it and let the sheet dismiss; `confirmFirstTime` runs from onDismiss.
+    func acceptFirstTime() {
+        confirmedFirstTime = pendingFirstTime
         pendingFirstTime = nil
+    }
+
+    func confirmFirstTime() async {
+        guard let response = confirmedFirstTime else { return }
+        confirmedFirstTime = nil
         await authorise(response)
     }
 
     /// The payment stays CREATED/AUTHORIZING on the server and expires with the bank; nothing has moved.
     func cancelFirstTime() {
+        guard confirmedFirstTime == nil else { return }
         pendingFirstTime = nil
         created = nil
     }

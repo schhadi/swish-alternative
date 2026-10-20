@@ -1,21 +1,18 @@
 import type { FastifyInstance } from "fastify";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/db.js";
+import { LIMITS } from "../limits.js";
 import { applyTransition } from "../services/payments/stateMachine.js";
 import { mapWebhookEvent, parseWebhookEvent, WebhookVerificationError } from "../services/truelayer/webhooks.js";
-
-export interface WebhookRouteOptions {
-  /** Signed timestamps older (or newer) than this are refused. Infinity disables the check (tests with recorded fixtures). */
-  maxAgeSeconds: number;
-}
 
 /**
  * POST /webhooks/truelayer (docs/SPEC.md section 5): no bearer auth; the Tl-Signature header proves TrueLayer sent
  * it. Webhooks are the source of truth for payment status, so after verification the route always answers 200
  * (duplicates, unknown payments and unknown event types included) and only a database failure yields a 5xx, which
- * makes TrueLayer retry.
+ * makes TrueLayer retry. The event row is written after the transition, so a failure in between leaves no row and
+ * the retry applies the event (docs/DECISIONS.md #64). Bodies carry the payer's account identifiers: never log them.
  */
-export async function webhookRoutes(app: FastifyInstance, options: WebhookRouteOptions): Promise<void> {
+export async function webhookRoutes(app: FastifyInstance): Promise<void> {
   // The signature covers the exact bytes TrueLayer sent, so this plugin keeps the body as a string.
   app.addContentTypeParser("application/json", { parseAs: "string" }, (_request, body, done) => {
     done(null, body);
@@ -38,14 +35,6 @@ export async function webhookRoutes(app: FastifyInstance, options: WebhookRouteO
       request.log.warn({ reason: error instanceof Error ? error.message : String(error) }, "webhook rejected");
       return reply.status(403).send({ error: "webhook_invalid", message: "Signature verification failed" });
     }
-    const timestamp = headers["x-tl-webhook-timestamp"];
-    if (Number.isFinite(options.maxAgeSeconds)) {
-      const sentAt = timestamp ? Date.parse(timestamp) : Number.NaN;
-      if (!Number.isFinite(sentAt) || Math.abs(Date.now() - sentAt) > options.maxAgeSeconds * 1000) {
-        request.log.warn({ timestamp }, "webhook rejected: stale or missing timestamp");
-        return reply.status(403).send({ error: "webhook_stale", message: "Webhook timestamp is missing or too old" });
-      }
-    }
 
     let event;
     try {
@@ -54,47 +43,62 @@ export async function webhookRoutes(app: FastifyInstance, options: WebhookRouteO
       request.log.warn({ reason: error instanceof WebhookVerificationError ? error.message : "unparseable" }, "webhook body unusable");
       return reply.status(400).send({ error: "webhook_malformed", message: "Body is not a TrueLayer event" });
     }
+
+    // Age is observed, never enforced: replay is already a no-op through event_id and the forward-only state
+    // machine, and how TrueLayer stamps retried deliveries is unverified.
+    const timestamp = headers["x-tl-webhook-timestamp"];
+    const sentAt = timestamp ? Date.parse(timestamp) : Number.NaN;
+    const ageSeconds = Number.isFinite(sentAt) ? Math.round((Date.now() - sentAt) / 1000) : null;
+    if (ageSeconds === null || Math.abs(ageSeconds) > LIMITS.webhookMaxAgeSeconds) {
+      request.log.warn({ eventId: event.event_id, eventType: event.event_type, ageSeconds }, "webhook timestamp missing or old");
+    }
+
+    if (await prisma.webhookEvent.findUnique({ where: { id: event.event_id }, select: { id: true } })) {
+      request.log.info({ eventId: event.event_id, eventType: event.event_type }, "webhook redelivered; already applied");
+      return { received: true, duplicate: true };
+    }
+
     const mapped = mapWebhookEvent(event);
+    let applied = false;
+    let paymentId: string | null = null;
+    if (!mapped.status) {
+      request.log.info({ eventId: event.event_id, eventType: event.event_type }, "webhook event type not handled");
+    } else if (!mapped.providerPaymentId) {
+      request.log.warn({ eventId: event.event_id, eventType: event.event_type }, "webhook event without payment_id");
+    } else {
+      const payment = await prisma.payment.findUnique({
+        where: { tlPaymentId: mapped.providerPaymentId },
+        select: { id: true, payerUserId: true, payeeUserId: true },
+      });
+      if (!payment) {
+        request.log.warn({ eventId: event.event_id, eventType: event.event_type }, "webhook for unknown payment");
+      } else {
+        paymentId = payment.id;
+        const outcome = await applyTransition(
+          payment.id,
+          { to: mapped.status, source: "webhook", failureReason: mapped.failureReason, providerStatus: mapped.providerStatus },
+          request.log,
+        );
+        if (outcome.applied) {
+          applied = true;
+          // Real push notifications are out of scope for v1 (docs/SPEC.md section 10); the log line is the stub.
+          request.log.info(
+            { paymentId: payment.id, status: outcome.to, recipients: [payment.payerUserId, payment.payeeUserId].filter(Boolean) },
+            "push notification (stub)",
+          );
+        }
+      }
+    }
 
     try {
-      await prisma.webhookEvent.create({ data: { id: event.event_id, type: event.event_type, paymentId: null } });
+      await prisma.webhookEvent.create({ data: { id: event.event_id, type: event.event_type, paymentId } });
     } catch (error) {
+      // A concurrent copy of the same event got here first; the transition above was already a no-op for us.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        request.log.info({ eventId: event.event_id, eventType: event.event_type }, "webhook redelivered; already applied");
         return { received: true, duplicate: true };
       }
       throw error;
     }
-
-    if (!mapped.status) {
-      request.log.info({ eventId: event.event_id, eventType: event.event_type }, "webhook event type not handled");
-      return { received: true, applied: false };
-    }
-    if (!mapped.providerPaymentId) {
-      request.log.warn({ eventId: event.event_id, eventType: event.event_type }, "webhook event without payment_id");
-      return { received: true, applied: false };
-    }
-    const payment = await prisma.payment.findUnique({
-      where: { tlPaymentId: mapped.providerPaymentId },
-      select: { id: true, payerUserId: true, payeeUserId: true },
-    });
-    if (!payment) {
-      request.log.warn({ eventId: event.event_id, eventType: event.event_type }, "webhook for unknown payment");
-      return { received: true, applied: false };
-    }
-    await prisma.webhookEvent.update({ where: { id: event.event_id }, data: { paymentId: payment.id } });
-    const outcome = await applyTransition(
-      payment.id,
-      { to: mapped.status, source: "webhook", failureReason: mapped.failureReason, providerStatus: mapped.providerStatus },
-      request.log,
-    );
-    if (outcome.applied) {
-      // Real push notifications are out of scope for v1 (docs/SPEC.md section 10); the log line is the stub.
-      request.log.info(
-        { paymentId: payment.id, status: outcome.to, recipients: [payment.payerUserId, payment.payeeUserId].filter(Boolean) },
-        "push notification (stub)",
-      );
-    }
-    return { received: true, applied: outcome.applied };
+    return { received: true, applied };
   });
 }

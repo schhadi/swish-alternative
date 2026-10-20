@@ -118,14 +118,19 @@ export class StaticJwksWebhookVerifier implements WebhookVerifier {
 }
 
 /**
- * Event types -> our statuses. The names follow docs/SPEC.md section 5 (payment_executed, payment_settled,
- * payment_failed) and TrueLayer's "<resource>_<status>" convention seen in their official example (payout_settled);
- * confirm the full list and the event_body field names on docs.truelayer.com before go-live (docs/DECISIONS.md #59).
+ * Event bodies -> our statuses. Two recorded sandbox payloads in TrueLayer's official signing repository
+ * (ruby/test/resources) show the Payments webhook shape: flat, with `type` ("payment_executed", "payment_failed"),
+ * `event_version`, `event_id`, `payment_id` and, for failures, `failure_reason`/`failure_stage`; executed events also
+ * carry the payer's account identifiers under `payment_source`, which is why a body is never logged. An older
+ * `{event_type, event_body}` envelope appears in a payout example, so both are accepted. payment_settled and
+ * payment_authorized follow the same naming and stay unverified until docs.truelayer.com is reachable (DECISIONS #59).
  */
 export interface WebhookEvent {
+  /** Normalised: `type` or `event_type`. */
   event_type: string;
   event_id: string;
-  event_body?: Record<string, unknown>;
+  paymentId: string | null;
+  failureReason: string | null;
 }
 
 export interface MappedWebhookEvent {
@@ -144,14 +149,17 @@ export function parseWebhookEvent(body: string): WebhookEvent {
   }
   if (typeof parsed !== "object" || parsed === null) throw new WebhookVerificationError("body is not an object");
   const event = parsed as Record<string, unknown>;
-  if (typeof event.event_type !== "string" || typeof event.event_id !== "string") {
-    throw new WebhookVerificationError("event_type and event_id are required");
+  const envelope = typeof event.event_body === "object" && event.event_body !== null ? (event.event_body as Record<string, unknown>) : {};
+  const type = typeof event.type === "string" ? event.type : typeof event.event_type === "string" ? event.event_type : null;
+  if (!type || typeof event.event_id !== "string") {
+    throw new WebhookVerificationError("type and event_id are required");
   }
-  return {
-    event_type: event.event_type,
-    event_id: event.event_id,
-    ...(typeof event.event_body === "object" && event.event_body !== null ? { event_body: event.event_body as Record<string, unknown> } : {}),
+  const string = (key: string): string | null => {
+    if (typeof event[key] === "string") return event[key] as string;
+    if (typeof envelope[key] === "string") return envelope[key] as string;
+    return null;
   };
+  return { event_type: type, event_id: event.event_id, paymentId: string("payment_id"), failureReason: string("failure_reason") };
 }
 
 const EVENT_STATUS: Record<string, "authorized" | "executed" | "settled" | "failed"> = {
@@ -162,13 +170,11 @@ const EVENT_STATUS: Record<string, "authorized" | "executed" | "settled" | "fail
 };
 
 export function mapWebhookEvent(event: WebhookEvent): MappedWebhookEvent {
-  const body = event.event_body ?? {};
-  const providerPaymentId = typeof body.payment_id === "string" ? body.payment_id : null;
+  const providerPaymentId = event.paymentId;
   const raw = EVENT_STATUS[event.event_type];
   if (!raw) {
     return { providerPaymentId, status: null, failureReason: null, providerStatus: event.event_type };
   }
-  const failureReason = typeof body.failure_reason === "string" ? body.failure_reason : null;
-  const mapped = toPaymentStatus({ status: raw, failureReason });
+  const mapped = toPaymentStatus({ status: raw, failureReason: event.failureReason });
   return { providerPaymentId, status: mapped.status, failureReason: mapped.failureReason, providerStatus: raw };
 }

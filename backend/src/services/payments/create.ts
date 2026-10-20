@@ -61,9 +61,11 @@ export async function createPeerPayment(provider: PaymentProvider, input: Create
     return { payee, payment, firstTimePayee, payerProviderId: payerBank?.providerId ?? null };
   });
 
-  const beneficiary = decryptBankDetails(userOwnerKey(prepared.payee.id), prepared.payee.bankAccount);
   let created;
+  let beneficiary;
   try {
+    // Decryption sits inside the guard too: a key problem must end as FAILED + 502, never a 500 with a live CREATED row.
+    beneficiary = decryptBankDetails(userOwnerKey(prepared.payee.id), prepared.payee.bankAccount);
     created = await provider.createPayment({
       paymentId: prepared.payment.id,
       amountMinor: input.amountMinor,
@@ -76,7 +78,10 @@ export async function createPeerPayment(provider: PaymentProvider, input: Create
     });
   } catch (error) {
     const providerError = error instanceof ProviderError ? error : null;
-    log.error({ paymentId: prepared.payment.id, httpStatus: providerError?.httpStatus, providerCode: providerError?.providerCode }, "payment provider refused to create the payment");
+    log.error(
+      { paymentId: prepared.payment.id, httpStatus: providerError?.httpStatus, providerCode: providerError?.providerCode ?? (providerError ? null : "internal") },
+      "payment provider refused to create the payment",
+    );
     await applyTransition(prepared.payment.id, { to: "FAILED", source: "user", failureReason: "provider_error" }, log);
     throw new HttpError(502, "payment_provider_unavailable", "We couldn't start the payment with your bank just now. Nothing has been sent; try again in a moment.");
   }

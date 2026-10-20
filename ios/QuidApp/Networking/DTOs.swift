@@ -230,7 +230,8 @@ struct RegisteredContactDTO: Codable, Hashable, Sendable {
 struct PayeeDTO: Codable, Hashable, Sendable {
     let userId: String
     let displayName: String
-    let accountHolderName: String
+    /// The name their bank holds; present only for a first-time payee, for the warning sheet.
+    let accountHolderName: String?
     let copStatus: CopStatus
     let bankName: String
 }

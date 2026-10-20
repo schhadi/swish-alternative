@@ -67,7 +67,8 @@ export async function paymentRoutes(app: FastifyInstance): Promise<void> {
       payee: {
         userId: created.payee.userId,
         displayName: created.payee.displayName,
-        accountHolderName: created.payee.accountHolderName,
+        // The bank-held name is disclosed only when the warning sheet needs it (docs/DECISIONS.md #63).
+        accountHolderName: created.firstTimePayee ? created.payee.accountHolderName : null,
         copStatus: created.payee.copStatus,
         bankName: providerDisplayName(created.payee.providerId, providers) ?? "Their bank",
       },

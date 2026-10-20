@@ -69,8 +69,17 @@ describe("payment state machine", () => {
     expect(classifyIgnored("EXECUTED", "AUTHORIZED")).toBe("stale");
     expect(classifyIgnored("FAILED", "SETTLED")).toBe("terminal");
     expect(classifyIgnored("CANCELLED", "EXECUTED")).toBe("terminal");
-    expect(classifyIgnored("AUTHORIZED", "CANCELLED")).toBe("invalid");
+    expect(classifyIgnored("EXECUTED", "CANCELLED")).toBe("invalid");
     expect(classifyIgnored("EXECUTED", "FAILED")).toBe("invalid");
+  });
+
+  it("accepts a cancellation reported after authorisation, so a polled row always reaches a terminal state", async () => {
+    const id = await paymentIn("AUTHORIZED");
+    const outcome = await applyTransition(id, { to: "CANCELLED", source: "poll", failureReason: "canceled" }, ctx.app.log);
+    expect(outcome).toEqual({ applied: true, from: "AUTHORIZED", to: "CANCELLED" });
+    const row = await prisma.payment.findUniqueOrThrow({ where: { id } });
+    expect(row.status).toBe("CANCELLED");
+    expect(row.failureReason).toBe("canceled");
   });
 
   it("never fails a payment the bank has executed", async () => {

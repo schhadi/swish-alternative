@@ -1,5 +1,6 @@
 import * as tlSigning from "truelayer-signing";
 import type { HttpMethod } from "truelayer-signing";
+import { LIMITS } from "../../limits.js";
 import { ProviderError, type CreatePaymentInput, type CreatedProviderPayment, type PaymentProvider, type ProviderPaymentState, type ProviderStatus } from "../payments/provider.js";
 
 /**
@@ -13,7 +14,10 @@ import { ProviderError, type CreatePaymentInput, type CreatedProviderPayment, ty
  * first sandbox run, docs/DECISIONS.md #59): the token endpoint path and form (connect/token, client_credentials,
  * scope "payments"), every field name in the create-payment body and response (resource_token, status), the
  * GET /v3/payments/{id} response (status, failure_reason, payment_method.provider_selection.provider_id), the raw
- * status vocabulary and the hosted payment page URL. All of them live in this file only.
+ * status vocabulary, the hosted payment page URL, the Idempotency-Key replay semantics (same response or 409,
+ * byte-identical body, key lifetime; no retry is attempted until that is known) and the GB provider ids in
+ * services/providers.ts (a preselected payment with an unknown id fails as 4xx -> FAILED -> 502, nothing is sent).
+ * All of them live in this file only.
  */
 export interface TrueLayerClientOptions {
   apiBaseUrl: string;
@@ -139,6 +143,7 @@ export class TrueLayerClient implements PaymentProvider {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: form.toString(),
+        signal: AbortSignal.timeout(LIMITS.providerRequestTimeoutMs),
       });
     } catch (error) {
       throw new ProviderError(`token request failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -162,6 +167,7 @@ export class TrueLayerClient implements PaymentProvider {
         method,
         headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...init.headers },
         ...(init.body !== undefined ? { body: init.body } : {}),
+        signal: AbortSignal.timeout(LIMITS.providerRequestTimeoutMs),
       });
     } catch (error) {
       throw new ProviderError(`${method} ${path} failed: ${error instanceof Error ? error.message : String(error)}`);

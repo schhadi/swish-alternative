@@ -40,9 +40,11 @@ export const ALLOWED_FROM: Record<PaymentStatus, readonly PaymentStatus[]> = {
   // A settled or executed webhook can arrive before the authorized one; forward jumps are fine.
   EXECUTED: ["CREATED", "AUTHORIZING", "AUTHORIZED"],
   SETTLED: ["CREATED", "AUTHORIZING", "AUTHORIZED", "EXECUTED"],
-  // Once the bank has executed, a payment cannot fail.
+  // Once the bank has executed, a payment cannot fail. Both failure statuses are accepted from every earlier state,
+  // so a provider-reported failure can never leave a polled row non-terminal; a cancel-worded failure after
+  // authorisation is still a failure the payer caused.
   FAILED: ["CREATED", "AUTHORIZING", "AUTHORIZED"],
-  CANCELLED: ["CREATED", "AUTHORIZING"],
+  CANCELLED: ["CREATED", "AUTHORIZING", "AUTHORIZED"],
 };
 
 export interface TransitionInput {
