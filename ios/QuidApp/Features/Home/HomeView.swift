@@ -5,6 +5,7 @@ struct HomeView: View {
     @State private var viewModel: HomeViewModel
     @State private var placeholder: PhasePlaceholder?
     @State private var showBankSheet = false
+    @State private var payPresentation: PayPresentation?
     @Environment(AppEnvironment.self) private var appEnvironment
     @ScaledMetric(relativeTo: .footnote) private var contactTileWidth: CGFloat = 72
     let showActivity: () -> Void
@@ -46,6 +47,28 @@ struct HomeView: View {
         .sheet(isPresented: $showBankSheet) {
             BankLinkSheet(api: appEnvironment.api) { await viewModel.load() }
                 .environment(appEnvironment)
+        }
+        .fullScreenCover(item: $payPresentation) { presentation in
+            PayFlowView(environment: appEnvironment, target: presentation.target) { await viewModel.load() }
+                .environment(appEnvironment)
+        }
+    }
+
+    /// Pay opens the picker; a recent contact goes straight to the amount screen.
+    private enum PayPresentation: Identifiable {
+        case pick
+        case target(PayTarget)
+
+        var id: String {
+            switch self {
+            case .pick: return "pick"
+            case .target(let target): return target.userId
+            }
+        }
+
+        var target: PayTarget? {
+            if case .target(let target) = self { return target }
+            return nil
         }
     }
 
@@ -140,8 +163,9 @@ struct HomeView: View {
     private var actionButtons: some View {
         HStack(spacing: 12) {
             QuidButton(title: "Pay", systemImage: "arrow.up.right") {
-                placeholder = .pay
+                payPresentation = .pick
             }
+            .accessibilityIdentifier("home.pay")
             QuidButton(title: "Request", systemImage: "arrow.down.left", style: .secondary) {
                 placeholder = .request
             }
@@ -156,7 +180,7 @@ struct HomeView: View {
             ForEach(viewModel.incomingRequests) { request in
                 IncomingRequestCard(
                     request: request,
-                    onPay: { placeholder = .pay },
+                    onPay: { placeholder = .payRequest },
                     onDecline: { placeholder = .declineRequest }
                 )
             }
@@ -188,7 +212,7 @@ struct HomeView: View {
                     HStack(alignment: .top, spacing: 16) {
                         ForEach(viewModel.recentContacts) { contact in
                             Button {
-                                placeholder = .pay
+                                payPresentation = contact.isRegistered ? .target(PayTarget(userId: contact.id, displayName: contact.displayName)) : .pick
                             } label: {
                                 VStack(spacing: 8) {
                                     ZStack(alignment: .bottomTrailing) {
@@ -210,6 +234,7 @@ struct HomeView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Pay \(contact.displayName)")
+                            .accessibilityIdentifier("home.recent.\(contact.id)")
                         }
                     }
                     .padding(.horizontal, 4)

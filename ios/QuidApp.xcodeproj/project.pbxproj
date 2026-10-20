@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		51D000000000000000000052 /* TrueLayerSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 51D000000000000000000051 /* TrueLayerSDK */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		51D000000000000000000029 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -65,6 +69,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				51D000000000000000000052 /* TrueLayerSDK in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -125,6 +130,7 @@
 			);
 			name = QuidApp;
 			packageProductDependencies = (
+				51D000000000000000000051 /* TrueLayerSDK */,
 			);
 			productName = QuidApp;
 			productReference = 51D000000000000000000011 /* QuidApp.app */;
@@ -208,6 +214,9 @@
 			);
 			mainGroup = 51D000000000000000000002;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				51D000000000000000000050 /* XCRemoteSwiftPackageReference "truelayer-ios-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 51D000000000000000000003 /* Products */;
 			projectDirPath = "";
@@ -219,6 +228,25 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		51D000000000000000000050 /* XCRemoteSwiftPackageReference "truelayer-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/truelayer/truelayer-ios-sdk";
+			requirement = {
+				kind = exactVersion;
+				version = 4.1.9;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		51D000000000000000000051 /* TrueLayerSDK */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 51D000000000000000000050 /* XCRemoteSwiftPackageReference "truelayer-ios-sdk" */;
+			productName = TrueLayerSDK;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin PBXResourcesBuildPhase section */
 		51D000000000000000000015 /* Resources */ = {

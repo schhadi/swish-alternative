@@ -21,4 +21,25 @@ enum AppConfig {
     // Placeholder legal pages until real ones exist (docs/DECISIONS.md).
     static let privacyURL = URL(string: "https://quid.example/privacy")!
     static let termsURL = URL(string: "https://quid.example/terms")!
+    /// Shared with contacts who are not on Quid yet; real invite links arrive in Phase 3.
+    static let inviteURL = URL(string: "https://quid.example/invite")!
+
+    // MARK: Payments
+
+    enum TrueLayerEnvironment {
+        case sandbox, live
+    }
+
+    /// Where the bank returns the payer (registered in the TrueLayer Console; the scheme is in Info.plist).
+    static let paymentReturnURL = URL(string: "quid://return/payment")!
+
+    /// QUID_TRUELAYER_ENV=live switches the SDK to production; sandbox otherwise.
+    static var truelayerEnvironment: TrueLayerEnvironment {
+        ProcessInfo.processInfo.environment["QUID_TRUELAYER_ENV"] == "live" ? .live : .sandbox
+    }
+
+    /// QUID_HOSTED_PAGE=1 authorises through the hosted payment page in a web session instead of the SDK (debugging).
+    static var useHostedPaymentPage: Bool {
+        ProcessInfo.processInfo.environment["QUID_HOSTED_PAGE"] == "1"
+    }
 }

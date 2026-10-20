@@ -42,6 +42,36 @@ final class QuidAppUITests: XCTestCase {
     }
 
     @MainActor
+    func testPayFlowFromRecentContact() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-mock"]
+        app.launch()
+
+        let priya = app.buttons["home.recent.u_priya"]
+        waitFor(priya, in: app, timeout: 20)
+        priya.tap()
+
+        waitFor(app.staticTexts["pay.amount"], in: app, timeout: 10)
+        app.buttons["pay.key.1"].tap()
+        app.buttons["pay.key.2"].tap()
+        XCTAssertEqual(app.staticTexts["pay.amount"].value as? String, "£12.00")
+        let submit = app.buttons["pay.submit"]
+        XCTAssertTrue(submit.isEnabled)
+        submit.tap()
+
+        // Priya has been paid before, so no first-time sheet; the mock bank approves and the result shows Pending then Paid.
+        let title = app.staticTexts["pay.result.title"]
+        waitFor(title, in: app, timeout: 15)
+        let paid = NSPredicate(format: "label == %@", "Paid")
+        let became = XCTNSPredicateExpectation(predicate: paid, object: title)
+        XCTAssertEqual(XCTWaiter().wait(for: [became], timeout: 15), .completed, "result title was \(title.label)")
+        app.buttons["pay.done"].tap()
+
+        waitFor(app.tabBars.buttons["Home"], in: app, timeout: 10)
+        XCTAssertTrue(app.staticTexts["Priya Patel"].firstMatch.waitForExistence(timeout: 10))
+    }
+
+    @MainActor
     func testOnboardingHappyPath() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-mock", "-signed-out"]

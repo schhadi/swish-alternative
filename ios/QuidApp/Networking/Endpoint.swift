@@ -104,6 +104,12 @@ enum API {
     static func directoryLookup(hashes: [String]) -> Endpoint<DirectoryLookupResponseDTO> {
         Endpoint(method: .post, path: "/directory/lookup", body: DirectoryLookupRequest(hashes: hashes))
     }
+
+    // MARK: Phase 2
+
+    static func createPayment(_ request: CreatePaymentRequest) -> Endpoint<PaymentCreateResponseDTO> {
+        Endpoint(method: .post, path: "/payments", body: request)
+    }
 }
 
 // MARK: - Request bodies
@@ -119,6 +125,12 @@ struct OtpVerifyRequest: Codable, Sendable {
 
 struct DisplayNameRequest: Codable, Sendable {
     let displayName: String
+}
+
+struct CreatePaymentRequest: Codable, Equatable, Sendable {
+    let payeeUserId: String
+    let amountMinor: Int
+    let reference: String
 }
 
 struct BankAccountRequest: Codable, Equatable, Sendable {

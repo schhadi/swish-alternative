@@ -8,6 +8,9 @@ final class AppEnvironment {
     private(set) var api: APIClient
     private(set) var session: SessionStore
     private(set) var isMock: Bool
+    /// Bank authorisation and the address book: real in a live build, canned in MockMode.
+    private(set) var paymentAuthoriser: any PaymentAuthoriser
+    private(set) var contactSource: any ContactSource
 
     /// Loaded after sign-in. Decides whether onboarding still has steps to run.
     private(set) var profile: MeDTO?
@@ -28,11 +31,20 @@ final class AppEnvironment {
         static let bankLinkSkipped = "onboarding.bankLinkSkipped"
     }
 
-    init(api: APIClient, session: SessionStore, isMock: Bool, defaults: UserDefaults = .standard) {
+    init(
+        api: APIClient,
+        session: SessionStore,
+        isMock: Bool,
+        defaults: UserDefaults = .standard,
+        paymentAuthoriser: (any PaymentAuthoriser)? = nil,
+        contactSource: (any ContactSource)? = nil
+    ) {
         self.api = api
         self.session = session
         self.isMock = isMock
         self.defaults = defaults
+        self.paymentAuthoriser = paymentAuthoriser ?? (isMock ? MockPaymentAuthoriser() : AppEnvironment.liveAuthoriser())
+        self.contactSource = contactSource ?? (isMock ? MockContactSource() : ContactsService())
         contactsExplainerSeen = defaults.bool(forKey: Keys.contactsExplainerSeen)
         bankLinkSkipped = defaults.bool(forKey: Keys.bankLinkSkipped)
     }
@@ -73,6 +85,16 @@ final class AppEnvironment {
         return environment
     }
 
+    /// The SDK when the package is linked and not overridden for debugging; the hosted page otherwise.
+    private static func liveAuthoriser() -> any PaymentAuthoriser {
+        #if canImport(TrueLayerSDK)
+        if !AppConfig.useHostedPaymentPage {
+            return TrueLayerPaymentAuthoriser(environment: AppConfig.truelayerEnvironment)
+        }
+        #endif
+        return WebPaymentAuthoriser()
+    }
+
     /// Switches a live build into the demo ("Explore the demo" on the welcome screen).
     func enterDemoMode() {
         let store = InMemoryTokenStore(token: MockMode.sessionToken)
@@ -82,6 +104,8 @@ final class AppEnvironment {
         relay.attach(self)
         session = SessionStore(store: store)
         isMock = true
+        paymentAuthoriser = MockPaymentAuthoriser()
+        contactSource = MockContactSource()
         profile = nil
         profileError = nil
         hasLoadedProfile = false

@@ -114,7 +114,15 @@ final class MockServer: @unchecked Sendable {
         if let query, let exact = routes[MockServer.key(method, path + "?" + query)] {
             return exact
         }
-        return routes[MockServer.key(method, path)]
+        if let exact = routes[MockServer.key(method, path)] {
+            return exact
+        }
+        // "GET /payments/*" answers any id under that prefix; exact handlers and routes above always win.
+        let wanted = MockServer.key(method, path)
+        if let (_, handler) = handlers.first(where: { key, _ in key.hasSuffix("/*") && wanted.hasPrefix(String(key.dropLast())) }) {
+            return handler(MockRequest(method: method.uppercased(), path: path, query: query, body: body))
+        }
+        return nil
     }
 
     /// Every request seen since the last reset, oldest first. Used by tests.

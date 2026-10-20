@@ -45,6 +45,10 @@ struct RootView: View {
         .onChange(of: dynamicTypeSize) {
             QuidAppearance.configure()
         }
+        // The bank sends the payer back to quid://return/payment; the authoriser decides what to do with it.
+        .onOpenURL { url in
+            _ = appEnvironment.paymentAuthoriser.handleReturn(url: url)
+        }
     }
 
     private var profileErrorView: some View {

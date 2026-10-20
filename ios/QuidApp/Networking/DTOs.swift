@@ -219,6 +219,30 @@ struct RegisteredContactDTO: Codable, Hashable, Sendable {
     let userId: String
     let displayName: String
     let firstInitials: String
+    /// The bank they receive into, when linked. Never account identifiers.
+    let bankName: String?
+    /// False until they have a verified account that is not in its cooling-off window.
+    let canReceive: Bool
+    let coolingOffUntil: Date?
+}
+
+/// Who is being paid, as the server confirmed it with their bank. Returned by POST /payments only.
+struct PayeeDTO: Codable, Hashable, Sendable {
+    let userId: String
+    let displayName: String
+    let accountHolderName: String
+    let copStatus: CopStatus
+    let bankName: String
+}
+
+struct PaymentCreateResponseDTO: Codable, Hashable, Sendable {
+    let paymentId: String
+    let tlPaymentId: String?
+    let resourceToken: String
+    let authorisationUrl: String?
+    let firstTimePayee: Bool
+    let payee: PayeeDTO
+    let payment: PaymentDTO
 }
 
 struct DirectoryLookupResponseDTO: Codable, Sendable {

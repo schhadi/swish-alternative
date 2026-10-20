@@ -7,6 +7,8 @@ final class MockProfileState: @unchecked Sendable {
     var providerId: String? = "ob-monzo"
     var otpAttemptsRemaining = 5
     var hasSignedIn = true
+    /// Payments created through POST /payments this launch, newest last. Their status advances with age.
+    var createdPayments: [MockCreatedPayment] = []
 
     /// `complete` = an existing user with name and bank (the demo); otherwise a brand-new user.
     func reset(complete: Bool) {
@@ -15,10 +17,29 @@ final class MockProfileState: @unchecked Sendable {
         providerId = complete ? "ob-monzo" : nil
         otpAttemptsRemaining = 5
         hasSignedIn = complete
+        createdPayments = []
     }
 
     var isComplete: Bool {
         !displayName.isEmpty && bankLinked
+    }
+}
+
+/// A payment the mock backend created. AUTHORIZING for 2 s, EXECUTED until 4 s, then SETTLED, so the result screen
+/// shows Pending turning into Paid.
+struct MockCreatedPayment: Sendable {
+    let id: String
+    let payeeUserId: String
+    let payeeName: String
+    let amountMinor: Int
+    let reference: String
+    let createdAt: Date
+
+    func status(at now: Date = Date()) -> String {
+        let age = now.timeIntervalSince(createdAt)
+        if age < 2 { return "AUTHORIZING" }
+        if age < 4 { return "EXECUTED" }
+        return "SETTLED"
     }
 }
 
@@ -47,9 +68,66 @@ enum MockFixtures {
             "GET /me": { _ in .json(me()) },
             "GET /payments": { request in
                 guard state.hasSignedIn, state.isComplete else { return .json(payments([])) }
+                let created = state.createdPayments.reversed().map(createdPaymentJSON)
                 if request.query?.contains("role=received") == true { return .json(payments(receivedPayments)) }
-                if request.query?.contains("role=sent") == true { return .json(payments(sentPayments)) }
-                return .json(payments(sentPayments + receivedPayments))
+                if request.query?.contains("role=sent") == true { return .json(payments(created + sentPayments)) }
+                return .json(payments(created + sentPayments + receivedPayments))
+            },
+            "GET /payments/*": { request in
+                let id = String(request.path.dropFirst("/payments/".count))
+                if let created = state.createdPayments.first(where: { $0.id == id }) {
+                    return .json(createdPaymentJSON(created))
+                }
+                if let fixture = (sentPayments + receivedPayments).first(where: { $0.contains("\"id\": \"\(id)\"") }) {
+                    return .json(fixture)
+                }
+                return .json(#"{"error":"not_found","message":"We couldn't find that payment."}"#, status: 404)
+            },
+            "POST /payments": { request in
+                guard let body = request.decode(CreatePaymentRequest.self) else {
+                    return .json(#"{"error":"validation_error","message":"Request failed validation"}"#, status: 400)
+                }
+                if body.payeeUserId == meUserId {
+                    return .json(#"{"error":"self_payment","message":"You can't pay yourself."}"#, status: 400)
+                }
+                guard let person = people[body.payeeUserId] else {
+                    return .json(#"{"error":"payee_not_found","message":"We couldn't find that person on Quid."}"#, status: 404)
+                }
+                guard person.bankName != nil else {
+                    return .json(#"{"error":"payee_not_payable","message":"\(person.name) hasn't linked a verified bank account yet, so they can't be paid."}"#, status: 400)
+                }
+                if body.amountMinor > 25000 {
+                    return .json(#"{"error":"limit_per_payment","message":"The most you can send in one payment is £250.","details":{"limitMinor":25000,"remainingMinor":25000}}"#, status: 400)
+                }
+                let reference = body.reference.trimmingCharacters(in: .whitespaces)
+                guard !reference.isEmpty, reference.count <= 18 else {
+                    return .json(#"{"error":"invalid_reference","message":"Use up to 18 letters, numbers, spaces or & . / -"}"#, status: 400)
+                }
+                let paidBefore = state.createdPayments.contains { $0.payeeUserId == body.payeeUserId && $0.status() != "AUTHORIZING" }
+                    || completedFixturePayees.contains(body.payeeUserId)
+                let created = MockCreatedPayment(
+                    id: "p_m\(state.createdPayments.count + 1)",
+                    payeeUserId: body.payeeUserId,
+                    payeeName: person.name,
+                    amountMinor: body.amountMinor,
+                    reference: reference,
+                    createdAt: Date()
+                )
+                state.createdPayments.append(created)
+                return .json(
+                    """
+                    {
+                      "paymentId": "\(created.id)",
+                      "tlPaymentId": "mock_tl_\(created.id)",
+                      "resourceToken": "mock_token_\(created.id)",
+                      "authorisationUrl": "https://mock.quid.invalid/authorise/\(created.id)",
+                      "firstTimePayee": \(!paidBefore),
+                      "payee": {"userId": "\(body.payeeUserId)", "displayName": "\(person.name)", "accountHolderName": "\(person.accountHolderName)", "copStatus": "MATCH", "bankName": "\(person.bankName ?? "")"},
+                      "payment": \(createdPaymentJSON(created))
+                    }
+                    """,
+                    status: 201
+                )
             },
             "GET /requests": { _ in .json(state.isComplete ? incomingRequests() : #"{"requests":[]}"#) },
             "GET /orgs": { _ in .json(state.isComplete ? organisations() : #"{"organisations":[]}"#) },
@@ -109,18 +187,12 @@ enum MockFixtures {
                 guard let body = request.decode(DirectoryLookupRequest.self) else {
                     return .json(#"{"error":"validation_error","message":"Request failed validation"}"#, status: 400)
                 }
-                let known: [(phone: String, userId: String, name: String)] = [
-                    ("+447700900002", "u_priya", "Priya Patel"),
-                    ("+447700900003", "u_tom", "Tom Whitfield"),
-                    ("+447700900004", "u_amara", "Amara Osei"),
-                    ("+447700900005", "u_jonas", "Jonas Berg"),
-                ]
                 let wanted = Set(body.hashes)
-                let entries = known.compactMap { entry -> String? in
-                    let hash = PhoneHasher.clientHash(entry.phone)
+                let entries = people.values.sorted { $0.name < $1.name }.compactMap { person -> String? in
+                    let hash = PhoneHasher.clientHash(person.phone)
                     guard wanted.contains(hash) else { return nil }
-                    let initials = entry.name.split(separator: " ").prefix(2).compactMap { $0.first }.map(String.init).joined().uppercased()
-                    return #"{"hash":"\#(hash)","userId":"\#(entry.userId)","displayName":"\#(entry.name)","firstInitials":"\#(initials)"}"#
+                    let initials = person.name.split(separator: " ").prefix(2).compactMap { $0.first }.map(String.init).joined().uppercased()
+                    return #"{"hash":"\#(hash)","userId":"\#(person.userId)","displayName":"\#(person.name)","firstInitials":"\#(initials)","bankName":\#(jsonString(person.bankName)),"canReceive":\#(person.bankName != nil),"coolingOffUntil":null}"#
                 }
                 return .json(#"{"registered":[\#(entries.joined(separator: ","))]}"#)
             },
@@ -128,6 +200,43 @@ enum MockFixtures {
     }
 
     // MARK: - People
+
+    struct MockPerson: Sendable {
+        let userId: String
+        let name: String
+        let phone: String
+        /// nil = no verified bank account, so they cannot be paid (Jonas).
+        let bankName: String?
+        var accountHolderName: String { name }
+    }
+
+    /// Everyone on Quid in the demo, by user id. Phone numbers match MockContactSource.
+    static let people: [String: MockPerson] = [
+        "u_priya": MockPerson(userId: "u_priya", name: "Priya Patel", phone: "+447700900002", bankName: "Starling"),
+        "u_tom": MockPerson(userId: "u_tom", name: "Tom Whitfield", phone: "+447700900003", bankName: "Barclays"),
+        "u_amara": MockPerson(userId: "u_amara", name: "Amara Osei", phone: "+447700900004", bankName: "Lloyds"),
+        "u_jonas": MockPerson(userId: "u_jonas", name: "Jonas Berg", phone: "+447700900005", bankName: nil),
+    ]
+
+    /// Payees with a completed fixture payment, so paying them again is not "first time".
+    static let completedFixturePayees: Set<String> = ["u_priya", "u_tom"]
+
+    static func createdPaymentJSON(_ created: MockCreatedPayment) -> String {
+        let status = created.status()
+        let counterparty = #"{"userId":"\#(created.payeeUserId)","displayName":"\#(created.payeeName)"}"#
+        return payment(
+            id: created.id,
+            payer: meUserId,
+            payee: created.payeeUserId,
+            amount: created.amountMinor,
+            reference: created.reference,
+            status: status,
+            created: ISO8601.string(from: created.createdAt),
+            settled: status == "SETTLED" ? ISO8601.string(from: created.createdAt.addingTimeInterval(4)) : nil,
+            counterparty: counterparty,
+            bankName: providerName(state.providerId) ?? "Monzo"
+        )
+    }
 
     private static let priya = #"{"userId":"u_priya","displayName":"Priya Patel"}"#
     private static let tom = #"{"userId":"u_tom","displayName":"Tom Whitfield"}"#
