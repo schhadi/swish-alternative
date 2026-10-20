@@ -23,7 +23,9 @@ final class PayFlowTests: XCTestCase {
         return environment
     }
 
-    private func viewModel(target: PayTarget?, authoriser: MockPaymentAuthoriser = MockPaymentAuthoriser()) async -> (PayViewModel, MockPaymentAuthoriser) {
+    private func viewModel(target: PayTarget?, authoriser: MockPaymentAuthoriser? = nil) async -> (PayViewModel, MockPaymentAuthoriser) {
+        // Built here rather than as a default argument: default arguments are evaluated outside the main actor.
+        let authoriser = authoriser ?? MockPaymentAuthoriser()
         let viewModel = PayViewModel(environment: await environment(), target: target, authoriser: authoriser)
         authoriser.delay = 0
         viewModel.pollInterval = .milliseconds(20)

@@ -17,6 +17,8 @@ coverage/
 !.env.example
 backend/secrets/
 *.pem
+# TrueLayer's published signing test keys (not secrets): the only PEM files that belong in git.
+!backend/test/fixtures/truelayer/*.pem
 
 # Databases (dev / test SQLite)
 *.db
