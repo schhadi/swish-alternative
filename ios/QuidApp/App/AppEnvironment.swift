@@ -45,8 +45,9 @@ final class AppEnvironment {
         self.session = session
         self.isMock = isMock
         self.defaults = defaults
-        self.paymentAuthoriser = paymentAuthoriser ?? (isMock ? MockPaymentAuthoriser() : AppEnvironment.liveAuthoriser())
-        self.hostedPageAuthoriser = isMock ? self.paymentAuthoriser : WebPaymentAuthoriser()
+        let authoriser = paymentAuthoriser ?? (isMock ? MockPaymentAuthoriser() : AppEnvironment.liveAuthoriser())
+        self.paymentAuthoriser = authoriser
+        self.hostedPageAuthoriser = isMock ? authoriser : WebPaymentAuthoriser()
         self.contactSource = contactSource ?? (isMock ? MockContactSource() : ContactsService())
         contactsExplainerSeen = defaults.bool(forKey: Keys.contactsExplainerSeen)
         bankLinkSkipped = defaults.bool(forKey: Keys.bankLinkSkipped)
