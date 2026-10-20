@@ -1,19 +1,26 @@
 import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
-import { env } from "./config.js";
+import { env, truelayerHosts } from "./config.js";
 import { HttpError } from "./lib/errors.js";
 import { loggerOptions } from "./lib/logger.js";
 import { LIMITS } from "./limits.js";
+import { readFileSync } from "node:fs";
 import { authRoutes } from "./routes/auth.js";
+import { devRoutes } from "./routes/dev.js";
 import { directoryRoutes } from "./routes/directory.js";
 import { healthRoutes } from "./routes/health.js";
 import { meRoutes } from "./routes/me.js";
 import { paymentRoutes } from "./routes/payments.js";
 import { placeholderRoutes } from "./routes/placeholders.js";
 import { providerRoutes } from "./routes/providers.js";
+import { webhookRoutes } from "./routes/webhooks.js";
 import { FakePayeeVerifier, NotImplementedPayeeVerifier, type PayeeVerifier } from "./services/cop.js";
+import { FakePaymentProvider } from "./services/payments/fake.js";
+import type { PaymentProvider } from "./services/payments/provider.js";
 import { StaticProviderSource, type ProviderSource } from "./services/providers.js";
+import { TrueLayerClient } from "./services/truelayer/client.js";
+import { TrueLayerWebhookVerifier, type WebhookVerifier } from "./services/truelayer/webhooks.js";
 import { LogSmsSender, NotImplementedSmsSender, type SmsSender } from "./services/sms.js";
 
 export { HttpError } from "./lib/errors.js";
@@ -23,6 +30,8 @@ export interface AppServices {
   smsSender: SmsSender;
   payeeVerifier: PayeeVerifier;
   providerSource: ProviderSource;
+  paymentProvider: PaymentProvider;
+  webhookVerifier: WebhookVerifier;
 }
 
 export interface BuildAppOptions {
@@ -34,6 +43,26 @@ export interface BuildAppOptions {
   authRequestsPerMinutePerIp?: number;
   /** Fastify's trustProxy (default env.TRUST_PROXY). Tests set it to prove per-IP limits key on X-Forwarded-For. */
   trustProxy?: boolean | number | string | string[];
+  /** Webhook replay window (default LIMITS.webhookMaxAgeSeconds); tests pass Infinity to replay recorded fixtures. */
+  webhookMaxAgeSeconds?: number;
+}
+
+/** PAYMENT_PROVIDER=truelayer needs the Console credentials and the signing key; fail at startup, not at the first payment. */
+function buildTrueLayerClient(): TrueLayerClient {
+  const missing = (["TRUELAYER_CLIENT_ID", "TRUELAYER_CLIENT_SECRET", "TRUELAYER_KID", "TRUELAYER_PRIVATE_KEY_PATH"] as const).filter((key) => !env[key]);
+  if (missing.length > 0) {
+    throw new Error(`PAYMENT_PROVIDER=truelayer needs ${missing.join(", ")} in backend/.env`);
+  }
+  const hosts = truelayerHosts();
+  return new TrueLayerClient({
+    apiBaseUrl: hosts.apiBaseUrl,
+    authBaseUrl: hosts.authBaseUrl,
+    hppBaseUrl: hosts.hppBaseUrl,
+    clientId: env.TRUELAYER_CLIENT_ID as string,
+    clientSecret: env.TRUELAYER_CLIENT_SECRET as string,
+    kid: env.TRUELAYER_KID as string,
+    privateKeyPem: readFileSync(env.TRUELAYER_PRIVATE_KEY_PATH as string, "utf8"),
+  });
 }
 
 declare module "fastify" {
@@ -61,6 +90,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     smsSender: options.services?.smsSender ?? (env.SMS_SENDER === "log" ? new LogSmsSender(app.log) : new NotImplementedSmsSender()),
     payeeVerifier: options.services?.payeeVerifier ?? (env.COP_VERIFIER === "fake" ? new FakePayeeVerifier() : new NotImplementedPayeeVerifier()),
     providerSource: options.services?.providerSource ?? new StaticProviderSource(),
+    paymentProvider:
+      options.services?.paymentProvider ?? (env.PAYMENT_PROVIDER === "truelayer" ? buildTrueLayerClient() : new FakePaymentProvider(env.PUBLIC_BASE_URL)),
+    webhookVerifier: options.services?.webhookVerifier ?? new TrueLayerWebhookVerifier(truelayerHosts().webhookJkus),
   };
   app.decorate("services", services);
 
@@ -104,6 +136,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.register(directoryRoutes);
   app.register(paymentRoutes);
   app.register(placeholderRoutes);
+  app.register(webhookRoutes, { maxAgeSeconds: options.webhookMaxAgeSeconds ?? LIMITS.webhookMaxAgeSeconds });
+  if (services.paymentProvider instanceof FakePaymentProvider) {
+    app.register(devRoutes, { provider: services.paymentProvider, returnUri: env.PAYMENT_RETURN_URI });
+  }
 
   return app;
 }

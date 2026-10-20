@@ -51,6 +51,14 @@ const EnvSchema = z.object({
   TRUELAYER_CLIENT_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
   TRUELAYER_KID: z.preprocess(emptyToUndefined, z.string().optional()),
   TRUELAYER_PRIVATE_KEY_PATH: z.preprocess(emptyToUndefined, z.string().optional()),
+  // "fake" is an in-process stand-in with a dev approval page (no credentials, no sandbox); refused in production.
+  PAYMENT_PROVIDER: z.enum(["fake", "truelayer"]).default("fake"),
+  // Hosts default per TRUELAYER_ENV in truelayerHosts() below; override only if TrueLayer's docs say otherwise.
+  TRUELAYER_API_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  TRUELAYER_AUTH_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  TRUELAYER_HPP_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  // Where the bank sends the payer back; must be registered in the TrueLayer Console and match the app's URL scheme.
+  PAYMENT_RETURN_URI: z.string().min(1).default("quid://return/payment"),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -67,6 +75,7 @@ function loadEnv(): Env {
     const problems: string[] = [];
     if (config.SMS_SENDER === "log") problems.push("SMS_SENDER=log logs OTP codes; set a real sender");
     if (config.COP_VERIFIER === "fake") problems.push("COP_VERIFIER=fake accepts any account; set a real verifier");
+    if (config.PAYMENT_PROVIDER === "fake") problems.push("PAYMENT_PROVIDER=fake moves no money; set PAYMENT_PROVIDER=truelayer");
     if (config.PHONE_HASH_PEPPER.startsWith("dev-only")) problems.push("PHONE_HASH_PEPPER is the dev placeholder");
     if (/^0+$/.test(config.BANK_DATA_KEY)) problems.push("BANK_DATA_KEY is the all-zero placeholder");
     if (problems.length > 0) {
@@ -77,6 +86,23 @@ function loadEnv(): Env {
 }
 
 export const env: Env = loadEnv();
+
+/**
+ * TrueLayer hosts. The sandbox API host comes from TrueLayer's official signing examples and the webhook JWKS hosts
+ * from their official webhook example; the auth and hosted-payment-page hosts, and every live host, still need
+ * checking against docs.truelayer.com (unreachable while this was written; see docs/DECISIONS.md #59).
+ */
+export function truelayerHosts(config: Pick<Env, "TRUELAYER_ENV" | "TRUELAYER_API_BASE_URL" | "TRUELAYER_AUTH_BASE_URL" | "TRUELAYER_HPP_BASE_URL"> = env) {
+  const sandbox = config.TRUELAYER_ENV === "sandbox";
+  return {
+    apiBaseUrl: config.TRUELAYER_API_BASE_URL ?? (sandbox ? "https://api.truelayer-sandbox.com" : "https://api.truelayer.com"),
+    authBaseUrl: config.TRUELAYER_AUTH_BASE_URL ?? (sandbox ? "https://auth.truelayer-sandbox.com" : "https://auth.truelayer.com"),
+    hppBaseUrl: config.TRUELAYER_HPP_BASE_URL ?? (sandbox ? "https://payment.truelayer-sandbox.com" : "https://payment.truelayer.com"),
+    webhookJkus: sandbox
+      ? ["https://webhooks.truelayer-sandbox.com/.well-known/jwks"]
+      : ["https://webhooks.truelayer.com/.well-known/jwks"],
+  };
+}
 
 export const isProduction = env.NODE_ENV === "production";
 export const isTest = env.NODE_ENV === "test";

@@ -155,6 +155,11 @@ model Payment {
   status        PaymentStatus @default(CREATED)
   tlPaymentId   String?       @unique
   failureReason String?
+  // Phase 2: the payer's bank once known (preselected or reported by the provider), the provider's last raw status,
+  // and when the fallback poll last asked, so a stuck payment is not polled on every tick.
+  providerId     String?
+  providerStatus String?
+  lastPolledAt   DateTime?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -167,6 +172,14 @@ model Payment {
   @@index([payeeUserId, createdAt])
   @@index([collectionId])
   @@index([status, updatedAt])
+}
+
+/// Every webhook TrueLayer delivers, keyed by its event_id, so a redelivered event is acknowledged without being applied twice.
+model WebhookEvent {
+  id         String   @id
+  type       String
+  paymentId  String?
+  receivedAt DateTime @default(now())
 }
 
 model PaymentRequest {

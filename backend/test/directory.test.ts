@@ -2,12 +2,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "../src/lib/db.js";
 import { clientPhoneHash } from "../src/lib/phoneHash.js";
 import { LIMITS } from "../src/limits.js";
-import { bearer, createTestApp, resetDatabase, signIn, type TestContext } from "./helpers.js";
+import { bearer, createTestApp, linkBank, resetDatabase, signIn, type TestContext } from "./helpers.js";
 
 describe("directory lookup", () => {
   let ctx: TestContext;
   let token: string;
   let priyaId: string;
+  let priyaToken: string;
 
   beforeAll(async () => {
     ctx = await createTestApp();
@@ -19,6 +20,7 @@ describe("directory lookup", () => {
     await ctx.app.inject({ method: "PUT", url: "/me", headers: bearer(token), payload: { displayName: "Sam Okafor" } });
     const priya = await signIn(ctx, "07700 900002");
     priyaId = priya.userId;
+    priyaToken = priya.token;
     await ctx.app.inject({ method: "PUT", url: "/me", headers: bearer(priya.token), payload: { displayName: "Priya Patel" } });
   });
 
@@ -32,11 +34,27 @@ describe("directory lookup", () => {
     const response = await ctx.app.inject({ method: "POST", url: "/directory/lookup", headers: bearer(token), payload: { hashes } });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
-      registered: [{ hash: clientPhoneHash("+447700900002"), userId: priyaId, displayName: "Priya Patel", firstInitials: "PP" }],
+      registered: [
+        { hash: clientPhoneHash("+447700900002"), userId: priyaId, displayName: "Priya Patel", firstInitials: "PP", bankName: null, canReceive: false, coolingOffUntil: null },
+      ],
     });
     const raw = JSON.stringify(response.json());
     expect(raw).not.toContain(clientPhoneHash("+447700900003"));
     expect(raw).not.toContain("+44");
+  });
+
+  it("says whether a registered contact can be paid, naming the bank but never the account", async () => {
+    const before = await ctx.app.inject({ method: "POST", url: "/directory/lookup", headers: bearer(token), payload: { hashes: [clientPhoneHash("+447700900002")] } });
+    expect(before.json().registered[0]).toMatchObject({ userId: priyaId, bankName: null, canReceive: false, coolingOffUntil: null });
+
+    await linkBank(ctx, priyaToken, { accountNumber: "87654321", accountHolderName: "Priya Patel", providerId: "ob-starling" });
+    const linked = await ctx.app.inject({ method: "POST", url: "/directory/lookup", headers: bearer(token), payload: { hashes: [clientPhoneHash("+447700900002")] } });
+    expect(linked.json().registered[0]).toMatchObject({ bankName: "Starling", canReceive: true, coolingOffUntil: null });
+    expect(JSON.stringify(linked.json())).not.toContain("87654321");
+
+    await linkBank(ctx, priyaToken, { sortCode: "20-00-00", accountNumber: "11112222", accountHolderName: "Priya Patel", providerId: "ob-starling" });
+    const cooling = await ctx.app.inject({ method: "POST", url: "/directory/lookup", headers: bearer(token), payload: { hashes: [clientPhoneHash("+447700900002")] } });
+    expect(cooling.json().registered[0]).toMatchObject({ canReceive: false, coolingOffUntil: expect.any(String) });
   });
 
   it("leaves out numbers that verified a code but never finished onboarding", async () => {

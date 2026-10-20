@@ -1,5 +1,6 @@
 import type { Payment, User } from "@prisma/client";
 import { LIMITS } from "../limits.js";
+import { providerDisplayName, type Provider } from "../services/providers.js";
 
 /** What the app may know about a user. Never the phone hash. */
 export function publicUser(user: Pick<User, "id" | "phoneE164" | "displayName" | "createdAt">) {
@@ -32,7 +33,7 @@ type PaymentWithParties = Payment & {
 };
 
 /** Wire shape the app decodes (ios PaymentDTO). `counterparty` is the other side from the viewer's point of view. */
-export function paymentDTO(payment: PaymentWithParties, viewerUserId: string) {
+export function paymentDTO(payment: PaymentWithParties, viewerUserId: string, providers: readonly Provider[] = []) {
   const viewerIsPayer = payment.payerUserId === viewerUserId;
   let counterparty: { userId: string | null; displayName: string };
   if (viewerIsPayer) {
@@ -59,6 +60,6 @@ export function paymentDTO(payment: PaymentWithParties, viewerUserId: string) {
     updatedAt: payment.updatedAt.toISOString(),
     settledAt: payment.settledAt?.toISOString() ?? null,
     counterparty,
-    bankName: null as string | null,
+    bankName: providerDisplayName(payment.providerId, providers),
   };
 }

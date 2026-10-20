@@ -15,6 +15,8 @@ async function main(): Promise<void> {
   prisma = db.prisma;
   const { buildApp } = await import("./app.js");
   const { purgeExpired } = await import("./services/maintenance.js");
+  const { pollInFlightPayments } = await import("./services/payments/poller.js");
+  const { LIMITS } = await import("./limits.js");
   app = buildApp();
   await app.listen({ port: env.PORT, host: env.HOST });
   app.log.info({ env: env.NODE_ENV, truelayer: env.TRUELAYER_ENV }, "quid backend ready");
@@ -29,6 +31,17 @@ async function main(): Promise<void> {
   };
   await purge();
   setInterval(() => void purge(), 60 * 60 * 1000).unref();
+
+  // Fallback for payments whose webhook never arrived (docs/SPEC.md section 3).
+  const poll = async () => {
+    try {
+      const result = await pollInFlightPayments(app!.services.paymentProvider, app!.log);
+      if (result.checked > 0) app?.log.info(result, "polled in-flight payments");
+    } catch (error) {
+      app?.log.warn({ err: error }, "payment poll failed");
+    }
+  };
+  setInterval(() => void poll(), LIMITS.pollIntervalSeconds * 1000).unref();
 }
 
 async function shutdown(signal: string): Promise<void> {

@@ -5,6 +5,8 @@ import { prisma } from "../lib/db.js";
 import { initials } from "../lib/dto.js";
 import { serverPhoneHash } from "../lib/phoneHash.js";
 import { LIMITS } from "../limits.js";
+import { coolingOffUntil } from "../services/bankAccounts.js";
+import { providerDisplayName } from "../services/providers.js";
 
 const LookupBody = z.object({
   hashes: z
@@ -33,15 +35,35 @@ export async function directoryRoutes(app: FastifyInstance): Promise<void> {
       const { hashes } = LookupBody.parse(request.body);
       const unique = [...new Set(hashes)];
       const byServerHash = new Map(unique.map((clientHash) => [serverPhoneHash(clientHash), clientHash]));
+      const providers = await app.services.providerSource.list();
       const users = await prisma.user.findMany({
         // A number that verified a code but never set a name has not finished onboarding and is not "on Quid" yet.
         where: { phoneHash: { in: [...byServerHash.keys()] }, deletedAt: null, displayName: { not: "" }, NOT: { id: callerId } },
-        select: { id: true, displayName: true, phoneHash: true },
+        select: {
+          id: true,
+          displayName: true,
+          phoneHash: true,
+          bankAccount: { select: { providerId: true, copStatus: true, createdAt: true, changedAt: true } },
+        },
       });
+      const now = Date.now();
       const registered = users.flatMap((user) => {
         const clientHash = user.phoneHash ? byServerHash.get(user.phoneHash) : undefined;
         if (!clientHash) return [];
-        return [{ hash: clientHash, userId: user.id, displayName: user.displayName, firstInitials: initials(user.displayName) }];
+        // What the picker needs to say whether this person can be paid right now: a bank name, never identifiers.
+        const account = user.bankAccount;
+        const coolingOff = account ? coolingOffUntil(account, now) : null;
+        return [
+          {
+            hash: clientHash,
+            userId: user.id,
+            displayName: user.displayName,
+            firstInitials: initials(user.displayName),
+            bankName: account ? providerDisplayName(account.providerId, providers) ?? "Their bank" : null,
+            canReceive: account?.copStatus === "MATCH" && coolingOff === null,
+            coolingOffUntil: coolingOff?.toISOString() ?? null,
+          },
+        ];
       });
       return { registered };
     },

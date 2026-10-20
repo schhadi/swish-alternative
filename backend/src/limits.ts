@@ -30,6 +30,12 @@ export const LIMITS = {
   requestExpiryDays: 14,
   /** Payments stuck in AUTHORIZING longer than this are polled against TrueLayer */
   authorizingPollAfterMinutes: 2,
+  /** How often the fallback poll runs, and the least time between two polls of the same payment */
+  pollIntervalSeconds: 60,
+  /** POST /payments per user per minute */
+  paymentCreationsPerMinute: 20,
+  /** A webhook whose signed timestamp is older than this is refused (replay protection) */
+  webhookMaxAgeSeconds: 300,
 } as const;
 
 export type Limits = typeof LIMITS;
