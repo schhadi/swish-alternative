@@ -1,6 +1,14 @@
 import type { FastifyBaseLogger } from "fastify";
 
-export type PushKind = "payment_status" | "request_received" | "request_reminder" | "request_paid" | "request_declined";
+export type PushKind =
+  | "payment_status"
+  | "request_received"
+  | "request_reminder"
+  | "request_paid"
+  | "request_declined"
+  | "collection_due"
+  | "collection_reminder"
+  | "collection_paid";
 
 /**
  * Real push notifications are out of scope for v1 (docs/SPEC.md section 10); this log line is the stub. It carries

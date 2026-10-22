@@ -150,6 +150,8 @@ model Payment {
 
   // Set when the payment settles a PaymentRequest (the request also points back via paymentId).
   requestId String?
+  // Phase 4: the collection member this payment is for (the member points back via paymentId once it executes).
+  collectionMemberId String?
 
   amountMinor   Int
   currency      String        @default("GBP")
@@ -173,6 +175,7 @@ model Payment {
   @@index([payerUserId, createdAt])
   @@index([payeeUserId, createdAt])
   @@index([collectionId])
+  @@index([collectionMemberId])
   @@index([status, updatedAt])
 }
 
@@ -270,6 +273,7 @@ model Collection {
   dueAt                DateTime?
   slug                 String           @unique // short, url-safe; encoded in the QR as https://<domain>/c/<slug>
   status               CollectionStatus @default(OPEN)
+  closedAt             DateTime?
   createdAt            DateTime         @default(now())
 
   members  CollectionMember[]
@@ -286,9 +290,11 @@ model CollectionMember {
   status       MemberStatus @default(UNPAID)
   paymentId    String?      @unique
   payment      Payment?     @relation(fields: [paymentId], references: [id])
+  paidAt       DateTime?
   remindedAt   DateTime?
   remindCount  Int          @default(0)
   createdAt    DateTime     @default(now())
 
   @@index([collectionId, status])
+  @@index([userId])
 }

@@ -92,7 +92,7 @@ describe("payment polling fallback", () => {
     expect(page.body).not.toContain("87654321");
     const approve = await ctx.app.inject({ method: "POST", url: `/dev/authorise/${tlPaymentId}/approve` });
     expect(approve.statusCode).toBe(303);
-    expect(approve.headers.location).toBe("quid://return/payment");
+    expect(approve.headers.location).toMatch(/^quid:\/\/return\/payment\?payment_id=fake_/);
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } })).status).toBe("AUTHORIZED");
     const advance = await ctx.app.inject({ method: "POST", url: `/dev/payments/${tlPaymentId}/advance`, payload: { to: "settled" } });
     expect(advance.statusCode).toBe(200);

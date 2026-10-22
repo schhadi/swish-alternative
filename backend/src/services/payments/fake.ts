@@ -8,6 +8,7 @@ interface FakeRecord {
   reference: string;
   providerSelection: CreatePaymentInput["providerSelection"];
   resourceToken: string;
+  returnUri: string;
 }
 
 /**
@@ -37,6 +38,7 @@ export class FakePaymentProvider implements PaymentProvider {
       reference: input.reference,
       providerSelection: input.providerSelection,
       resourceToken,
+      returnUri: input.returnUri,
     });
     return {
       providerPaymentId,
@@ -57,6 +59,18 @@ export class FakePaymentProvider implements PaymentProvider {
     const record = this.records.get(providerPaymentId);
     if (!record) return null;
     return { amountMinor: record.amountMinor, accountHolderName: record.accountHolderName, reference: record.reference, status: record.state.status };
+  }
+
+  /**
+   * Where the approval page sends the payer afterwards: the payment's own return URI with `payment_id` added, as the
+   * hosted payment page is expected to do (docs/DECISIONS.md #59). The app's quid:// return and the web return page
+   * for people paying a collection link both work this way.
+   */
+  returnTo(providerPaymentId: string): string | null {
+    const record = this.records.get(providerPaymentId);
+    if (!record) return null;
+    const separator = record.returnUri.includes("?") ? "&" : "?";
+    return `${record.returnUri}${separator}payment_id=${encodeURIComponent(providerPaymentId)}`;
   }
 
   advance(providerPaymentId: string, status: ProviderStatus, failureReason: string | null = null, providerId?: string | null): boolean {

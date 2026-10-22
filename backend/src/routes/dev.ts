@@ -59,14 +59,14 @@ button{display:block;width:100%;height:58px;border:0;border-radius:18px;font-siz
       provider.advance(id, "settled");
       void reconcile(id);
     }, 6_000).unref();
-    return reply.redirect(returnUri, 303);
+    return reply.redirect(provider.returnTo(id) ?? returnUri, 303);
   });
 
   app.post("/dev/authorise/:id/decline", async (request, reply) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
     if (!provider.advance(id, "failed", "user_canceled")) return reply.status(404).send({ error: "not_found", message: "No such fake payment" });
     await reconcile(id);
-    return reply.redirect(returnUri, 303);
+    return reply.redirect(provider.returnTo(id) ?? returnUri, 303);
   });
 
   /** Scriptable version of the buttons: curl -X POST .../dev/payments/<providerPaymentId>/advance -d '{"to":"settled"}' */

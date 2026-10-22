@@ -1,11 +1,11 @@
 import { randomInt } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { env } from "../config.js";
 import { currentUser, requireAuth } from "../lib/auth.js";
 import { prisma } from "../lib/db.js";
-import { escapeHtml, firstName, htmlPage } from "../lib/html.js";
+import { escapeHtml, firstName, sendHtmlPage } from "../lib/html.js";
 import { LIMITS } from "../limits.js";
 
 /** No look-alike characters (0/o, 1/l/i), so a code read aloud or retyped still works. */
@@ -20,18 +20,6 @@ function newInviteCode(): string {
 
 function baseUrl(): string {
   return env.PUBLIC_BASE_URL.replace(/\/$/, "");
-}
-
-/** Public pages are read by anyone holding the link: no caching, no referrer, no scripts. */
-function sendPage(reply: FastifyReply, status: number, title: string, body: string) {
-  return reply
-    .status(status)
-    .header("cache-control", "no-store")
-    .header("referrer-policy", "no-referrer")
-    .header("x-content-type-options", "nosniff")
-    .header("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'")
-    .type("text/html; charset=utf-8")
-    .send(htmlPage(escapeHtml(title), body));
 }
 
 function downloadBlock(inviterFirstName: string | null): string {
@@ -72,12 +60,12 @@ export async function linkRoutes(app: FastifyInstance): Promise<void> {
       ? await prisma.user.findUnique({ where: { inviteCode: code }, select: { displayName: true, deletedAt: true } })
       : null;
     if (!inviter || inviter.deletedAt || inviter.displayName === "") {
-      return sendPage(reply, 404, "Invite not found", `<h1>This invite link isn't valid</h1>
+      return sendHtmlPage(reply, 404, "Invite not found", `<h1>This invite link isn't valid</h1>
 <p>It may have been mistyped. Ask the person who sent it for a new one.</p>
 ${downloadBlock(null)}`);
     }
     const name = firstName(inviter.displayName);
-    return sendPage(reply, 200, `Join ${name} on Quid`, `<h1>${escapeHtml(name)} invited you to Quid</h1>
+    return sendHtmlPage(reply, 200, `Join ${name} on Quid`, `<h1>${escapeHtml(name)} invited you to Quid</h1>
 <p>Quid lets you pay friends by picking them from your contacts. Every payment goes from your bank to theirs and you approve it in your own banking app. Quid never holds your money.</p>
 ${downloadBlock(name)}`);
   });
@@ -89,11 +77,11 @@ ${downloadBlock(name)}`);
       ? await prisma.split.findUnique({ where: { id }, select: { id: true, title: true, creator: { select: { displayName: true, deletedAt: true } } } })
       : null;
     if (!split || split.creator.deletedAt) {
-      return sendPage(reply, 404, "Split not found", `<h1>This link isn't valid</h1>
+      return sendHtmlPage(reply, 404, "Split not found", `<h1>This link isn't valid</h1>
 <p>It may have been mistyped, or the split was removed.</p>`);
     }
     const name = firstName(split.creator.displayName);
-    return sendPage(reply, 200, `${name}'s split on Quid`, `<h1>${escapeHtml(name)} is splitting “${escapeHtml(split.title)}” on Quid</h1>
+    return sendHtmlPage(reply, 200, `${name}'s split on Quid`, `<h1>${escapeHtml(name)} is splitting “${escapeHtml(split.title)}” on Quid</h1>
 <p>Open Quid to see your share and pay it from your banking app.</p>
 <a class="button primary" href="quid://split/${encodeURIComponent(split.id)}">Open in Quid</a>
 ${downloadBlock(name)}`);

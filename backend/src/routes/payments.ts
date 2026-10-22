@@ -6,6 +6,7 @@ import { paymentDTO } from "../lib/dto.js";
 import { env } from "../config.js";
 import { HttpError } from "../lib/errors.js";
 import { LIMITS } from "../limits.js";
+import { createCollectionPayment } from "../services/collections/service.js";
 import { createPeerPayment } from "../services/payments/create.js";
 import { providerDisplayName } from "../services/providers.js";
 
@@ -46,7 +47,33 @@ export async function paymentRoutes(app: FastifyInstance): Promise<void> {
     const user = currentUser(request);
     const body = CreateBody.parse(request.body);
     if (body.collectionId) {
-      throw new HttpError(400, "not_supported_yet", "Paying a collection arrives in Phase 4.");
+      if (body.payeeUserId || body.requestId) {
+        throw new HttpError(400, "validation_error", "Pay a collection, a request or a person, one at a time.");
+      }
+      const started = await createCollectionPayment(
+        app.services.paymentProvider,
+        { collectionId: body.collectionId, payer: { kind: "user", user }, expectedAmountMinor: body.amountMinor },
+        request.log,
+      );
+      const providers = await app.services.providerSource.list();
+      const payment = await prisma.payment.findUniqueOrThrow({ where: { id: started.paymentId }, include });
+      return reply.status(201).send({
+        paymentId: started.paymentId,
+        tlPaymentId: started.providerPaymentId,
+        resourceToken: started.resourceToken,
+        authorisationUrl: started.authorisationUrl,
+        firstTimePayee: started.firstTimePayee,
+        provider: env.PAYMENT_PROVIDER,
+        payee: {
+          userId: null,
+          displayName: started.organisation.name,
+          // As for a person: the bank-held name only when the warning sheet needs it (docs/DECISIONS.md #63).
+          accountHolderName: started.firstTimePayee ? started.accountHolderName : null,
+          copStatus: "MATCH",
+          bankName: providerDisplayName(started.organisation.providerId, providers) ?? "Their bank",
+        },
+        payment: paymentDTO(payment, user.id, providers),
+      });
     }
     let created;
     if (body.requestId) {

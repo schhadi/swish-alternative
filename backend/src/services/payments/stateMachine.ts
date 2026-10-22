@@ -1,6 +1,7 @@
 import type { PaymentStatus } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import { prisma } from "../../lib/db.js";
+import { settleCollectionPayment } from "../collections/settle.js";
 import { settleRequestForPayment } from "../requests/settle.js";
 
 /**
@@ -104,11 +105,12 @@ export async function applyTransition(paymentId: string, input: TransitionInput,
 }
 
 /**
- * Once the bank has sent the money, the request it pays (if any) is paid. Runs for duplicates and ignored stale
+ * Once the bank has sent the money, the request or collection member it pays (if any) is paid. Runs for duplicates and ignored stale
  * events too, so a retried webhook repairs a request left open by a crash between the two writes.
  */
 async function afterSent(paymentId: string, status: PaymentStatus, log: FastifyBaseLogger, at: Date): Promise<void> {
   if (status === "EXECUTED" || status === "SETTLED") {
     await settleRequestForPayment(paymentId, log, at);
+    await settleCollectionPayment(paymentId, log, at);
   }
 }

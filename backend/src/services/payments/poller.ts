@@ -1,6 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import { prisma } from "../../lib/db.js";
 import { LIMITS } from "../../limits.js";
+import { settleMissedCollectionPayments } from "../collections/settle.js";
 import { settleMissedRequests } from "../requests/settle.js";
 import { toPaymentStatus, type PaymentProvider } from "./provider.js";
 import { applyTransition, type TransitionSource } from "./stateMachine.js";
@@ -12,7 +13,7 @@ import { applyTransition, type TransitionSource } from "./stateMachine.js";
  */
 export async function pollInFlightPayments(provider: PaymentProvider, log: FastifyBaseLogger, now: Date = new Date()): Promise<{ checked: number; changed: number; abandoned: number; requestsSettled: number }> {
   const abandoned = await failAbandonedCreations(log, now);
-  const requestsSettled = await settleMissedRequests(log, now);
+  const requestsSettled = (await settleMissedRequests(log, now)) + (await settleMissedCollectionPayments(log, now));
   const stuckSince = new Date(now.getTime() - LIMITS.authorizingPollAfterMinutes * 60_000);
   const polledBefore = new Date(now.getTime() - LIMITS.pollIntervalSeconds * 1000);
   const candidates = await prisma.payment.findMany({

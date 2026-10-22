@@ -1,9 +1,10 @@
 // Dev seed: three registered users so the directory, the pay flow and the activity feed have something to show,
-// plus two open requests for Sam (Phase 3).
+// plus two open requests for Sam (Phase 3) and a club and a collection due (Phase 4).
 // Run with: npm run seed (idempotent).
 import { prisma } from "../lib/db.js";
 import { hashPhone } from "../lib/phoneHash.js";
 import { storeUserBankAccount } from "../services/bankAccounts.js";
+import { createCollection, createOrganisation } from "../services/collections/service.js";
 import { createRequest, createSplit } from "../services/requests/service.js";
 import type { FastifyBaseLogger } from "fastify";
 
@@ -42,6 +43,27 @@ async function main(): Promise<void> {
     await createSplit({ creatorUserId: priya, title: "Pizza night", totalMinor: 5400, shares: [{ userId: sam, amountMinor: 1800 }, { userId: tom, amountMinor: 1800 }] }, quiet);
     await createRequest({ requesterUserId: tom, payerUserId: sam, amountMinor: 1125, reference: "Flat Wi-Fi", note: "October's share" }, quiet);
     console.log("seeded two open requests for Sam: Priya's Pizza night split and Tom's Wi-Fi request");
+  }
+
+  // Phase 4: Sam looks after SOAS Hockey Club (its fixture account is a MATCH) with an open Trip deposit; Priya's
+  // Flat 4B asks Sam for October bills, so Home shows a collection to pay.
+  if ((await prisma.orgMember.count({ where: { userId: sam } })) === 0) {
+    const hockey = await createOrganisation(
+      { creatorUserId: sam, name: "SOAS Hockey Club", kind: "CLUB", bank: { sortCode: "230580", accountNumber: "11223344", accountHolderName: "SOAS Hockey Club", providerId: "ob-monzo" } },
+      quiet,
+    );
+    const due = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
+    await createCollection(
+      { orgId: hockey, treasurerUserId: sam, title: "Trip deposit", amountPerPersonMinor: 3000, dueAt: due, members: [{ userId: priya }, { userId: tom }, { displayName: "Jamie Lee" }] },
+      quiet,
+    );
+    const flat = await createOrganisation(
+      { creatorUserId: priya, name: "Flat 4B", kind: "FLAT", bank: { sortCode: "040004", accountNumber: "87654321", accountHolderName: "Priya Patel", providerId: "ob-starling" } },
+      quiet,
+    );
+    await createCollection({ orgId: flat, treasurerUserId: priya, title: "October bills", amountPerPersonMinor: 6240, dueAt: due, members: [{ userId: sam }, { userId: tom }] }, quiet);
+    const slug = (await prisma.collection.findFirstOrThrow({ where: { orgId: hockey } })).slug;
+    console.log(`seeded SOAS Hockey Club (treasurer Sam) with Trip deposit at /c/${slug}, and Flat 4B's October bills for Sam to pay`);
   }
 }
 

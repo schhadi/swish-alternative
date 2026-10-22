@@ -15,7 +15,7 @@ const DisplayNameBody = z.object({
 
 const digitsOnly = (value: string) => value.replace(/[\s-]/g, "");
 
-const BankAccountBody = z.object({
+export const BankAccountBody = z.object({
   sortCode: z.string().transform(digitsOnly).pipe(z.string().regex(/^\d{6}$/, "Sort code is 6 digits")),
   accountNumber: z.string().transform(digitsOnly).pipe(z.string().regex(/^\d{8}$/, "Account number is 8 digits")),
   accountHolderName: z.string().trim().min(2, "Enter the name on the account").max(70, "Keep it under 70 characters"),

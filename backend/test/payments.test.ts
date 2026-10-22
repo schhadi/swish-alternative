@@ -150,10 +150,12 @@ describe("POST /payments", () => {
     expect((await pay(samToken, { payeeUserId: priyaId, amountMinor: 25000, reference: "Again" })).statusCode).toBe(201);
   });
 
-  it("defers collections and requests to later phases", async () => {
-    const response = await pay(samToken, { collectionId: "col_1", amountMinor: 100, reference: "Hi" });
-    expect(response.statusCode).toBe(400);
-    expect(response.json().error).toBe("not_supported_yet");
+  it("pays one thing at a time and refuses unknown collections", async () => {
+    const both = await pay(samToken, { collectionId: "col_1", payeeUserId: priyaId, amountMinor: 100, reference: "Hi" });
+    expect(both.statusCode).toBe(400);
+    const unknown = await pay(samToken, { collectionId: "col_1" });
+    expect(unknown.statusCode).toBe(404);
+    expect(unknown.json().error).toBe("collection_not_found");
   });
 
   it("requires auth", async () => {

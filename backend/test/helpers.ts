@@ -50,6 +50,8 @@ export async function createTestApp(options: BuildAppOptions = {}): Promise<Test
       ...options.services,
     },
     authRequestsPerMinutePerIp: options.authRequestsPerMinutePerIp ?? 10_000,
+    publicPagesPerMinutePerIp: options.publicPagesPerMinutePerIp ?? 10_000,
+    publicPaymentsPerMinutePerIp: options.publicPaymentsPerMinutePerIp ?? 10_000,
   });
   await app.ready();
   return { app, sms, provider };

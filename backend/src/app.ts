@@ -7,13 +7,14 @@ import { loggerOptions } from "./lib/logger.js";
 import { LIMITS } from "./limits.js";
 import { readFileSync } from "node:fs";
 import { authRoutes } from "./routes/auth.js";
+import { collectPageRoutes } from "./routes/collectPage.js";
 import { devRoutes } from "./routes/dev.js";
 import { directoryRoutes } from "./routes/directory.js";
 import { healthRoutes } from "./routes/health.js";
 import { linkRoutes } from "./routes/links.js";
 import { meRoutes } from "./routes/me.js";
+import { organisationRoutes } from "./routes/orgs.js";
 import { paymentRoutes } from "./routes/payments.js";
-import { placeholderRoutes } from "./routes/placeholders.js";
 import { providerRoutes } from "./routes/providers.js";
 import { requestRoutes } from "./routes/requests.js";
 import { webhookRoutes } from "./routes/webhooks.js";
@@ -43,6 +44,9 @@ export interface BuildAppOptions {
    * every injected request shares 127.0.0.1, so a file of tests would trip the production cap.
    */
   authRequestsPerMinutePerIp?: number;
+  /** Per-IP caps on the public collection page and on payments started from it; tunable for the same reason. */
+  publicPagesPerMinutePerIp?: number;
+  publicPaymentsPerMinutePerIp?: number;
   /** Fastify's trustProxy (default env.TRUST_PROXY). Tests set it to prove per-IP limits key on X-Forwarded-For. */
   trustProxy?: boolean | number | string | string[];
 }
@@ -137,7 +141,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.register(paymentRoutes);
   app.register(requestRoutes);
   app.register(linkRoutes);
-  app.register(placeholderRoutes);
+  app.register(organisationRoutes);
+  app.register(collectPageRoutes, {
+    pagesPerMinute: options.publicPagesPerMinutePerIp ?? LIMITS.publicPagesPerMinutePerIp,
+    paymentsPerMinute: options.publicPaymentsPerMinutePerIp ?? LIMITS.publicPaymentsPerMinutePerIp,
+  });
   app.register(webhookRoutes);
   if (services.paymentProvider instanceof FakePaymentProvider) {
     app.register(devRoutes, { provider: services.paymentProvider, returnUri: env.PAYMENT_RETURN_URI });

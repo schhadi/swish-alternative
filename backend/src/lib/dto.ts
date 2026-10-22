@@ -1,3 +1,4 @@
+import { collectionLink, memberNextReminderAt, type CollectionRow, type OrganisationRow } from "../services/collections/service.js";
 import { env } from "../config.js";
 import { effectiveRequestStatus, nextReminderAt } from "../services/requests/rules.js";
 import type { RequestRow, SplitRow } from "../services/requests/service.js";
@@ -135,5 +136,85 @@ export function splitDTO(split: SplitRow, now: Date = new Date()) {
     isComplete: pendingCount === 0,
     link: splitLink(split.id),
     shares,
+  };
+}
+
+// ---------- Phase 4: Collect ----------
+
+
+interface CollectionCore {
+  id: string;
+  orgId: string;
+  title: string;
+  amountPerPersonMinor: number;
+  dueAt: Date | null;
+  slug: string;
+  status: string;
+}
+
+/** ios CollectionSummaryDTO: progress counts plus the public link. */
+export function collectionSummaryDTO(collection: CollectionCore, members: readonly { status: string }[]) {
+  return {
+    id: collection.id,
+    orgId: collection.orgId,
+    title: collection.title,
+    amountPerPersonMinor: collection.amountPerPersonMinor,
+    dueAt: collection.dueAt?.toISOString() ?? null,
+    slug: collection.slug,
+    status: collection.status,
+    memberCount: members.length,
+    paidCount: members.filter((member) => member.status === "PAID").length,
+    link: collectionLink(collection.slug),
+  };
+}
+
+/** An organisation as the signed-in user sees it: their role, the bank it receives into, its collections. */
+export function organisationDTO(org: OrganisationRow, role: string, providers: readonly Provider[]) {
+  return {
+    id: org.id,
+    name: org.name,
+    kind: org.kind,
+    role,
+    bankName: providerDisplayName(org.bankAccount.providerId, providers) ?? "Their bank",
+    collections: org.collections.map((collection) => collectionSummaryDTO(collection, collection.members)),
+  };
+}
+
+/** The treasurer's view (ios CollectionDetailDTO). Never member user ids or anything about their bank. */
+export function collectionDetailDTO(collection: CollectionRow) {
+  return {
+    collection: collectionSummaryDTO(collection, collection.members),
+    organisationName: collection.org.name,
+    members: collection.members.map((member) => ({
+      id: member.id,
+      displayName: member.displayName,
+      status: member.status,
+      paidAt: member.paidAt?.toISOString() ?? null,
+      remindCount: member.remindCount,
+      lastRemindedAt: member.remindedAt?.toISOString() ?? null,
+      nextReminderAt: memberNextReminderAt(member)?.toISOString() ?? null,
+      isOnQuid: member.userId !== null,
+    })),
+  };
+}
+
+/** A collection the signed-in user is on the list of (ios CollectionDueDTO). */
+export function collectionDueDTO(member: {
+  id: string;
+  status: string;
+  paidAt: Date | null;
+  collection: CollectionCore & { org: { name: string } };
+}) {
+  return {
+    memberId: member.id,
+    collectionId: member.collection.id,
+    title: member.collection.title,
+    organisationName: member.collection.org.name,
+    amountPerPersonMinor: member.collection.amountPerPersonMinor,
+    dueAt: member.collection.dueAt?.toISOString() ?? null,
+    collectionStatus: member.collection.status,
+    status: member.status,
+    paidAt: member.paidAt?.toISOString() ?? null,
+    link: collectionLink(member.collection.slug),
   };
 }

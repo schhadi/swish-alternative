@@ -52,6 +52,15 @@ export const LIMITS = {
   reminderCallsPerMinute: 30,
   /** Public pages (invite and split links) per IP per minute */
   publicPagesPerMinutePerIp: 60,
+  /** Collect (Phase 4): organisations one user can set up, and the shape of a collection */
+  organisationsPerUser: 10,
+  organisationNameMaxLength: 60,
+  collectionTitleMaxLength: 60,
+  collectionMaxMembers: 200,
+  /** A due date can be at most this far ahead */
+  collectionMaxDueDays: 366,
+  /** Payments started from a collection's public page, per IP per minute */
+  publicPaymentsPerMinutePerIp: 10,
 } as const;
 
 export type Limits = typeof LIMITS;

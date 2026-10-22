@@ -72,36 +72,19 @@ export async function createPeerPayment(provider: PaymentProvider, input: Create
   const amountMinor = prepared.payment.amountMinor;
   const reference = prepared.payment.reference;
 
-  let created;
-  let beneficiary;
-  try {
-    // Decryption sits inside the guard too: a key problem must end as FAILED + 502, never a 500 with a live CREATED row.
-    beneficiary = decryptBankDetails(userOwnerKey(prepared.payee.id), prepared.payee.bankAccount);
-    created = await provider.createPayment({
+  const { created, beneficiary } = await sendToProvider(
+    provider,
+    {
       paymentId: prepared.payment.id,
       amountMinor,
-      currency: "GBP",
       reference,
-      beneficiary,
+      beneficiary: () => decryptBankDetails(userOwnerKey(prepared.payee.id), prepared.payee.bankAccount),
       payer: { id: input.payer.id, name: input.payer.displayName, phoneE164: input.payer.phoneE164 },
       providerSelection: prepared.payerProviderId ? { type: "preselected", providerId: prepared.payerProviderId } : { type: "user_selected" },
       returnUri: env.PAYMENT_RETURN_URI,
-    });
-  } catch (error) {
-    const providerError = error instanceof ProviderError ? error : null;
-    log.error(
-      { paymentId: prepared.payment.id, httpStatus: providerError?.httpStatus, providerCode: providerError?.providerCode ?? (providerError ? null : "internal") },
-      "payment provider refused to create the payment",
-    );
-    await applyTransition(prepared.payment.id, { to: "FAILED", source: "user", failureReason: "provider_error" }, log);
-    throw new HttpError(502, "payment_provider_unavailable", "We couldn't start the payment with your bank just now. Nothing has been sent; try again in a moment.");
-  }
-
-  await prisma.payment.update({
-    where: { id: prepared.payment.id },
-    data: { tlPaymentId: created.providerPaymentId, providerStatus: created.status },
-  });
-  await applyTransition(prepared.payment.id, { to: "AUTHORIZING", source: "user" }, log);
+    },
+    log,
+  );
   const payment = await prisma.payment.findUniqueOrThrow({ where: { id: prepared.payment.id } });
 
   return {
@@ -136,4 +119,52 @@ async function loadPayableRequest(requestId: string, payerUserId: string, amount
     throw new HttpError(400, "request_amount_mismatch", `This request is for ${pounds(request.amountMinor)}.`, { amountMinor: request.amountMinor });
   }
   return { payeeUserId: request.requesterUserId, amountMinor: request.amountMinor, reference: request.reference, requestId: request.id };
+}
+
+export interface ProviderCall {
+  paymentId: string;
+  amountMinor: number;
+  reference: string;
+  /** Decrypts the payee's details; called inside the failure guard, so a key problem ends as FAILED + 502. */
+  beneficiary: () => { accountHolderName: string; sortCode: string; accountNumber: string };
+  payer: { id: string; name: string; phoneE164: string | null };
+  providerSelection: { type: "preselected"; providerId: string } | { type: "user_selected" };
+  returnUri: string;
+}
+
+/**
+ * Hands a CREATED row to the provider, with our id as the Idempotency-Key, and moves it to AUTHORIZING. When the
+ * provider (or decryption) fails the row becomes FAILED with provider_error and the caller gets a 502, so a failed
+ * start never keeps counting against the payer's limits. Shared by person-to-person and collection payments.
+ */
+export async function sendToProvider(provider: PaymentProvider, call: ProviderCall, log: FastifyBaseLogger) {
+  let created;
+  let beneficiary;
+  try {
+    beneficiary = call.beneficiary();
+    created = await provider.createPayment({
+      paymentId: call.paymentId,
+      amountMinor: call.amountMinor,
+      currency: "GBP",
+      reference: call.reference,
+      beneficiary,
+      payer: call.payer,
+      providerSelection: call.providerSelection,
+      returnUri: call.returnUri,
+    });
+  } catch (error) {
+    const providerError = error instanceof ProviderError ? error : null;
+    log.error(
+      { paymentId: call.paymentId, httpStatus: providerError?.httpStatus, providerCode: providerError?.providerCode ?? (providerError ? null : "internal") },
+      "payment provider refused to create the payment",
+    );
+    await applyTransition(call.paymentId, { to: "FAILED", source: "user", failureReason: "provider_error" }, log);
+    throw new HttpError(502, "payment_provider_unavailable", "We couldn't start the payment with your bank just now. Nothing has been sent; try again in a moment.");
+  }
+  await prisma.payment.update({
+    where: { id: call.paymentId },
+    data: { tlPaymentId: created.providerPaymentId, providerStatus: created.status },
+  });
+  await applyTransition(call.paymentId, { to: "AUTHORIZING", source: "user" }, log);
+  return { created, beneficiary };
 }
