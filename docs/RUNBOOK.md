@@ -96,6 +96,20 @@ If this is run from the cloud session that built it: `docs.truelayer.com`, `api.
 
 MockMode (`-mock`): Home shows Priya's and Tom's requests and Activity → Requests also shows Amara's paid one and the "Flat cleaning supplies" split (Priya paid, Amara declined, Tom open and due a nudge). In a split you create, Priya pays her share after five seconds; nobody else pays.
 
+## Phase 4: collect
+
+### With the backend
+
+1. `npm run seed` makes Sam (+44 7700 900001) treasurer of SOAS Hockey Club with an open "Trip deposit" (£30 each: Priya, Tom and Jamie Lee) and puts Sam on Flat 4B's "October bills". The seed prints the Trip deposit's link.
+2. In the app, sign in as Sam: Collect lists the club and its collection, and "You're on the list" shows October bills. Home shows it under "Requests for you" with Pay.
+3. **New organisation** (the + menu) checks the account with the bank first. Sort code `99-99-99` gives no match, and an all-lowercase name gives a close match that offers the bank's version.
+4. **New collection** takes a title, the amount each, an optional due date, and people from contacts (on Quid) or by name. The treasurer view opens with the link, Copy, Show QR and Share.
+5. **Pay from the link, no app** (the definition of done): open the link (`http://localhost:3000/c/<slug>`) in Safari on the simulator or the Mac. Enter "Jamie Lee" and tap Pay. The fake bank page opens: approve, and the return page shows Pending, then Paid. Pull to refresh the treasurer view: Jamie Lee is Paid. Another name is added to the list as paid.
+6. Remind sends a `push notification (stub)` log line per person on Quid, once a day each. People added by name are listed as needing the link. Close (the ⋯ menu) makes the link answer "closed".
+7. Scanning the QR code from a real phone needs a link the phone can reach: run `scripts/ngrok.sh`, set `PUBLIC_BASE_URL` to the https URL and `TRUST_PROXY=1`, then restart the backend.
+
+MockMode (`-mock`): Collect shows SOAS Hockey Club with Trip deposit (7 of 12 paid) and Kit order (3 of 15), and Flat 4B's October bills to pay. In a collection you create, anyone called Priya Patel pays after five seconds.
+
 ## CI
 
 `.github/workflows/ci.yml`: backend job on Ubuntu (`npm ci`, typecheck, test); iOS job on `macos-15` that picks the newest Xcode 16 and the newest plain-numbered iPhone simulator available, then runs `xcodebuild test` for the `QuidApp` scheme (unit + UI tests). The raw xcodebuild log is uploaded as an artifact. A crashing test host fails the job even when xcodebuild exits 0 (it otherwise relaunches the host and reports the survivors as passed), and on failure the job prints the newest `QuidApp` crash reports and the simulator log lines for the app, so a crash can be read from the job log without the artifact.
