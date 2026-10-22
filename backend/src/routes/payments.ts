@@ -14,12 +14,14 @@ const FeedQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
+// A request fixes the payee, amount and reference, so with requestId the other two are optional (amountMinor, when
+// sent, must match the request). Without it, payeeUserId, amountMinor and reference are all required.
 const CreateBody = z.object({
   payeeUserId: z.string().min(1).optional(),
   collectionId: z.string().min(1).optional(),
-  requestId: z.string().min(1).optional(),
-  amountMinor: z.number().int().positive(),
-  reference: z.string().min(1).max(64),
+  requestId: z.string().min(1).max(64).optional(),
+  amountMinor: z.number().int().positive().optional(),
+  reference: z.string().min(1).max(64).optional(),
 });
 
 const include = {
@@ -43,17 +45,25 @@ export async function paymentRoutes(app: FastifyInstance): Promise<void> {
   app.post("/payments", { preHandler: [requireAuth, creationLimit] }, async (request, reply) => {
     const user = currentUser(request);
     const body = CreateBody.parse(request.body);
-    if (body.collectionId || body.requestId) {
-      throw new HttpError(400, "not_supported_yet", "Paying a request or a collection arrives in a later phase.");
+    if (body.collectionId) {
+      throw new HttpError(400, "not_supported_yet", "Paying a collection arrives in Phase 4.");
     }
-    if (!body.payeeUserId) {
-      throw new HttpError(400, "validation_error", "Choose who to pay.");
+    let created;
+    if (body.requestId) {
+      if (body.payeeUserId) {
+        throw new HttpError(400, "validation_error", "Pay a request or a person, not both.");
+      }
+      created = await createPeerPayment(app.services.paymentProvider, { payer: user, requestId: body.requestId, amountMinor: body.amountMinor }, request.log);
+    } else {
+      if (!body.payeeUserId) throw new HttpError(400, "validation_error", "Choose who to pay.");
+      if (body.amountMinor === undefined) throw new HttpError(400, "validation_error", "Enter an amount to send.");
+      if (body.reference === undefined) throw new HttpError(400, "validation_error", "Add a reference.");
+      created = await createPeerPayment(
+        app.services.paymentProvider,
+        { payer: user, payeeUserId: body.payeeUserId, amountMinor: body.amountMinor, reference: body.reference },
+        request.log,
+      );
     }
-    const created = await createPeerPayment(
-      app.services.paymentProvider,
-      { payer: user, payeeUserId: body.payeeUserId, amountMinor: body.amountMinor, reference: body.reference },
-      request.log,
-    );
     const providers = await app.services.providerSource.list();
     const payment = await prisma.payment.findUniqueOrThrow({ where: { id: created.payment.id }, include });
     return reply.status(201).send({

@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { HttpError } from "../../lib/errors.js";
+import { ukDateTime } from "../../lib/time.js";
 import { LIMITS } from "../../limits.js";
 import { coolingOffUntil } from "../bankAccounts.js";
 
@@ -9,7 +10,7 @@ type Tx = Pick<PrismaClient, "payment" | "user" | "bankAccount">;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function pounds(minor: number): string {
+export function pounds(minor: number): string {
   return `£${(minor / 100).toFixed(minor % 100 === 0 ? 0 : 2)}`;
 }
 
@@ -75,7 +76,7 @@ export async function loadPayableUser(tx: Tx, payeeUserId: string, payerUserId: 
   }
   const until = coolingOffUntil(payee.bankAccount, now.getTime());
   if (until) {
-    throw new HttpError(400, "payee_cooling_off", `${payee.displayName} changed their bank account recently and can receive payments again from ${until.toISOString()}.`, {
+    throw new HttpError(400, "payee_cooling_off", `${payee.displayName} changed their bank account recently and can receive payments again from ${ukDateTime(until)}.`, {
       coolingOffUntil: until.toISOString(),
     });
   }

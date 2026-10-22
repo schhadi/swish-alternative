@@ -6,16 +6,18 @@ import { HttpError } from "../../lib/errors.js";
 import { withKeyedLock } from "../../lib/keyedLock.js";
 import { decryptBankDetails, userOwnerKey } from "../bankAccounts.js";
 import { ProviderError, type PaymentProvider } from "./provider.js";
-import { assertWithinLimits, isFirstTimePayee, loadPayableUser, normaliseReference } from "./rules.js";
+import { effectiveRequestStatus, notPendingError } from "../requests/rules.js";
+import { assertWithinLimits, isFirstTimePayee, loadPayableUser, normaliseReference, pounds } from "./rules.js";
 import { applyTransition } from "./stateMachine.js";
 
-export interface CreatePeerPaymentInput {
+/** Either a payee, amount and reference typed by the payer, or a request to pay (which fixes all three). */
+export type CreatePeerPaymentInput = {
   payer: { id: string; displayName: string; phoneE164: string | null };
-  payeeUserId: string;
-  amountMinor: number;
-  reference: string;
   now?: Date;
-}
+} & (
+  | { requestId?: undefined; payeeUserId: string; amountMinor: number; reference: string }
+  | { requestId: string; amountMinor?: number }
+);
 
 export interface CreatedPeerPayment {
   payment: Payment;
@@ -35,24 +37,31 @@ export interface CreatedPeerPayment {
  */
 export async function createPeerPayment(provider: PaymentProvider, input: CreatePeerPaymentInput, log: FastifyBaseLogger): Promise<CreatedPeerPayment> {
   const now = input.now ?? new Date();
-  const reference = normaliseReference(input.reference);
-  if (!Number.isInteger(input.amountMinor) || input.amountMinor <= 0) {
-    throw new HttpError(400, "invalid_amount", "Enter an amount to send.");
+  if (input.requestId === undefined) {
+    if (!Number.isInteger(input.amountMinor) || input.amountMinor <= 0) {
+      throw new HttpError(400, "invalid_amount", "Enter an amount to send.");
+    }
   }
+  const typedReference = input.requestId === undefined ? normaliseReference(input.reference) : null;
 
   const prepared = await withKeyedLock(`payer:${input.payer.id}`, async () => {
     const tx = prisma;
-    const payee = await loadPayableUser(tx, input.payeeUserId, input.payer.id, now);
-    await assertWithinLimits(tx, input.payer.id, input.amountMinor, now);
+    // Paying a request: the payee, amount and reference come from the request, which must still be open.
+    const terms = input.requestId === undefined
+      ? { payeeUserId: input.payeeUserId, amountMinor: input.amountMinor, reference: typedReference as string, requestId: null }
+      : await loadPayableRequest(input.requestId, input.payer.id, input.amountMinor, now);
+    const payee = await loadPayableUser(tx, terms.payeeUserId, input.payer.id, now);
+    await assertWithinLimits(tx, input.payer.id, terms.amountMinor, now);
     const firstTimePayee = await isFirstTimePayee(tx, input.payer.id, payee.id);
     const payerBank = await tx.bankAccount.findUnique({ where: { userId: input.payer.id }, select: { providerId: true } });
     const payment = await tx.payment.create({
       data: {
         payerUserId: input.payer.id,
         payeeUserId: payee.id,
-        amountMinor: input.amountMinor,
+        requestId: terms.requestId,
+        amountMinor: terms.amountMinor,
         currency: "GBP",
-        reference,
+        reference: terms.reference,
         status: "CREATED",
         providerId: payerBank?.providerId ?? null,
         createdAt: now,
@@ -60,6 +69,8 @@ export async function createPeerPayment(provider: PaymentProvider, input: Create
     });
     return { payee, payment, firstTimePayee, payerProviderId: payerBank?.providerId ?? null };
   });
+  const amountMinor = prepared.payment.amountMinor;
+  const reference = prepared.payment.reference;
 
   let created;
   let beneficiary;
@@ -68,7 +79,7 @@ export async function createPeerPayment(provider: PaymentProvider, input: Create
     beneficiary = decryptBankDetails(userOwnerKey(prepared.payee.id), prepared.payee.bankAccount);
     created = await provider.createPayment({
       paymentId: prepared.payment.id,
-      amountMinor: input.amountMinor,
+      amountMinor,
       currency: "GBP",
       reference,
       beneficiary,
@@ -106,4 +117,23 @@ export async function createPeerPayment(provider: PaymentProvider, input: Create
       providerId: prepared.payee.bankAccount.providerId,
     },
   };
+}
+
+/**
+ * The request being paid: addressed to this payer and still open. More than one payment may be started for the same
+ * request (a cancelled attempt followed by another); the first to execute pays it (docs/DECISIONS.md #74).
+ */
+async function loadPayableRequest(requestId: string, payerUserId: string, amountMinor: number | undefined, now: Date) {
+  const request = await prisma.paymentRequest.findUnique({ where: { id: requestId } });
+  if (!request || request.payerUserId !== payerUserId) {
+    throw new HttpError(404, "request_not_found", "We couldn't find that request.");
+  }
+  const status = effectiveRequestStatus(request, now);
+  if (status !== "PENDING") {
+    throw notPendingError(status);
+  }
+  if (amountMinor !== undefined && amountMinor !== request.amountMinor) {
+    throw new HttpError(400, "request_amount_mismatch", `This request is for ${pounds(request.amountMinor)}.`, { amountMinor: request.amountMinor });
+  }
+  return { payeeUserId: request.requesterUserId, amountMinor: request.amountMinor, reference: request.reference, requestId: request.id };
 }

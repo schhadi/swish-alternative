@@ -10,10 +10,12 @@ import { authRoutes } from "./routes/auth.js";
 import { devRoutes } from "./routes/dev.js";
 import { directoryRoutes } from "./routes/directory.js";
 import { healthRoutes } from "./routes/health.js";
+import { linkRoutes } from "./routes/links.js";
 import { meRoutes } from "./routes/me.js";
 import { paymentRoutes } from "./routes/payments.js";
 import { placeholderRoutes } from "./routes/placeholders.js";
 import { providerRoutes } from "./routes/providers.js";
+import { requestRoutes } from "./routes/requests.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { FakePayeeVerifier, NotImplementedPayeeVerifier, type PayeeVerifier } from "./services/cop.js";
 import { FakePaymentProvider } from "./services/payments/fake.js";
@@ -133,6 +135,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.register(providerRoutes);
   app.register(directoryRoutes);
   app.register(paymentRoutes);
+  app.register(requestRoutes);
+  app.register(linkRoutes);
   app.register(placeholderRoutes);
   app.register(webhookRoutes);
   if (services.paymentProvider instanceof FakePaymentProvider) {

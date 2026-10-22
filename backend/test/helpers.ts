@@ -95,3 +95,30 @@ export async function linkBank(ctx: TestContext, token: string, overrides: Parti
   const response = await ctx.app.inject({ method: "PUT", url: "/me/bank-account", headers: bearer(token), payload });
   if (response.statusCode !== 200 || response.json().copStatus !== "MATCH") throw new Error(`bank link failed: ${response.body}`);
 }
+
+/** Signs in, sets a name and (optionally) links a verified account. The common setup of the Phase 3 tests. */
+export async function registerUser(
+  ctx: TestContext,
+  phone: string,
+  displayName: string,
+  bank: Partial<{ sortCode: string; accountNumber: string; accountHolderName: string; providerId: string }> | null = {},
+): Promise<{ token: string; userId: string }> {
+  const { token, userId } = await signIn(ctx, phone);
+  const named = await ctx.app.inject({ method: "PUT", url: "/me", headers: bearer(token), payload: { displayName } });
+  if (named.statusCode !== 200) throw new Error(`naming failed: ${named.body}`);
+  if (bank) await linkBank(ctx, token, { accountHolderName: displayName, ...bank });
+  return { token, userId };
+}
+
+/** A logger that drops everything, for calling services directly. */
+export const silentLog = {
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
+  debug: () => undefined,
+  trace: () => undefined,
+  fatal: () => undefined,
+  child: () => silentLog,
+  level: "silent",
+  silent: () => undefined,
+} as unknown as import("fastify").FastifyBaseLogger;

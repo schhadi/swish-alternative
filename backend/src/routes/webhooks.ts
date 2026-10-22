@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/db.js";
 import { LIMITS } from "../limits.js";
 import { applyTransition } from "../services/payments/stateMachine.js";
+import { pushStub } from "../services/push.js";
 import { mapWebhookEvent, parseWebhookEvent, WebhookVerificationError } from "../services/truelayer/webhooks.js";
 
 /**
@@ -81,11 +82,7 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
         );
         if (outcome.applied) {
           applied = true;
-          // Real push notifications are out of scope for v1 (docs/SPEC.md section 10); the log line is the stub.
-          request.log.info(
-            { paymentId: payment.id, status: outcome.to, recipients: [payment.payerUserId, payment.payeeUserId].filter(Boolean) },
-            "push notification (stub)",
-          );
+          pushStub(request.log, "payment_status", [payment.payerUserId, payment.payeeUserId], { paymentId: payment.id, status: outcome.to });
         }
       }
     }

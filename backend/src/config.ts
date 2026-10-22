@@ -59,6 +59,8 @@ const EnvSchema = z.object({
   TRUELAYER_HPP_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
   // Where the bank sends the payer back; must be registered in the TrueLayer Console and match the app's URL scheme.
   PAYMENT_RETURN_URI: z.string().min(1).default("quid://return/payment"),
+  // Where the invite and split-link pages send people to get the app (App Store or TestFlight). Blank: they say so.
+  APP_DOWNLOAD_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

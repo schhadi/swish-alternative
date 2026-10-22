@@ -70,6 +70,8 @@ model User {
   createdAt   DateTime  @default(now())
   lastSeenAt  DateTime  @default(now())
   deletedAt   DateTime?
+  // Phase 3: the short code in this user's invite link (https://<domain>/i/<code>), created on first use.
+  inviteCode  String?   @unique
 
   bankAccount           BankAccount?
   paymentsSent          Payment[]          @relation("PaymentPayer")
@@ -196,12 +198,16 @@ model PaymentRequest {
   payment         Payment?      @relation(fields: [paymentId], references: [id])
   expiresAt       DateTime // default now + 14 days, set in code
   lastRemindedAt  DateTime? // reminders are rate-limited to once per 24h
+  remindCount     Int           @default(0)
+  paidAt          DateTime?
+  declinedAt      DateTime?
   createdAt       DateTime      @default(now())
 
   splitShare SplitShare?
 
   @@index([payerUserId, status])
   @@index([requesterUserId, createdAt])
+  @@index([status, expiresAt])
 }
 
 model Split {

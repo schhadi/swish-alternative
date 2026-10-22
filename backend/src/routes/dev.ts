@@ -1,14 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../lib/db.js";
+import { escapeHtml } from "../lib/html.js";
 import { FakePaymentProvider } from "../services/payments/fake.js";
 import { reconcilePayment } from "../services/payments/poller.js";
 
 const ADVANCE_STATUSES = ["authorization_required", "authorizing", "authorized", "executed", "settled", "failed"] as const;
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] ?? char);
-}
 
 /**
  * Development-only stand-in for the bank's approval screen, registered only when PAYMENT_PROVIDER=fake.

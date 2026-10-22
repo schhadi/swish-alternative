@@ -15,6 +15,7 @@ async function main(): Promise<void> {
   prisma = db.prisma;
   const { buildApp } = await import("./app.js");
   const { purgeExpired } = await import("./services/maintenance.js");
+  const { expireStaleRequests } = await import("./services/requests/service.js");
   const { pollInFlightPayments } = await import("./services/payments/poller.js");
   const { LIMITS } = await import("./limits.js");
   app = buildApp();
@@ -25,6 +26,8 @@ async function main(): Promise<void> {
     try {
       const removed = await purgeExpired();
       app?.log.debug(removed, "purged expired rows");
+      const expired = await expireStaleRequests();
+      if (expired > 0) app?.log.info({ expired }, "expired payment requests");
     } catch (error) {
       app?.log.warn({ err: error }, "purge failed");
     }

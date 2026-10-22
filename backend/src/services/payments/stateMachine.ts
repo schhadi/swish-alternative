@@ -1,6 +1,7 @@
 import type { PaymentStatus } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import { prisma } from "../../lib/db.js";
+import { settleRequestForPayment } from "../requests/settle.js";
 
 /**
  * The payment state machine (docs/SPEC.md sections 3 and 7, docs/DECISIONS.md #60).
@@ -72,11 +73,13 @@ export async function applyTransition(paymentId: string, input: TransitionInput,
     const from = current.status;
     if (from === input.to) {
       log.debug({ paymentId, status: from, source: input.source }, "payment transition duplicate");
+      await afterSent(paymentId, from, log, at);
       return { applied: false, reason: "duplicate", current: from };
     }
     if (!allowedFrom.includes(from)) {
       const reason = classifyIgnored(from, input.to);
       log[reason === "stale" ? "info" : "warn"]({ paymentId, from, to: input.to, source: input.source, reason }, "payment transition ignored");
+      await afterSent(paymentId, from, log, at);
       return { applied: false, reason, current: from };
     }
     const result = await prisma.payment.updateMany({
@@ -91,10 +94,21 @@ export async function applyTransition(paymentId: string, input: TransitionInput,
     });
     if (result.count === 1) {
       log.info({ paymentId, from, to: input.to, source: input.source }, "payment status changed");
+      await afterSent(paymentId, input.to, log, at);
       return { applied: true, from, to: input.to };
     }
     // Someone else changed the row between the read and the write: look again.
   }
   log.warn({ paymentId, to: input.to, source: input.source }, "payment transition contended");
   return { applied: false, reason: "contended", current: null };
+}
+
+/**
+ * Once the bank has sent the money, the request it pays (if any) is paid. Runs for duplicates and ignored stale
+ * events too, so a retried webhook repairs a request left open by a crash between the two writes.
+ */
+async function afterSent(paymentId: string, status: PaymentStatus, log: FastifyBaseLogger, at: Date): Promise<void> {
+  if (status === "EXECUTED" || status === "SETTLED") {
+    await settleRequestForPayment(paymentId, log, at);
+  }
 }

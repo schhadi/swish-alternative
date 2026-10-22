@@ -41,7 +41,7 @@ describe("feeds and providers", () => {
     expect(missing.statusCode).toBe(404);
   });
 
-  it("serves empty requests and organisations until their phases land", async () => {
+  it("serves empty requests and organisations to a new user", async () => {
     expect((await ctx.app.inject({ method: "GET", url: "/requests?role=incoming", headers: bearer(token) })).json()).toEqual({ requests: [] });
     expect((await ctx.app.inject({ method: "GET", url: "/orgs", headers: bearer(token) })).json()).toEqual({ organisations: [] });
     expect((await ctx.app.inject({ method: "GET", url: "/orgs" })).statusCode).toBe(401);

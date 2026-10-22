@@ -40,6 +40,18 @@ export const LIMITS = {
   paymentCreationsPerMinute: 20,
   /** A webhook whose signed timestamp is further from now than this is logged at warn (never refused) */
   webhookMaxAgeSeconds: 300,
+  /** Requests and splits (Phase 3). A split's title is shown in the app; its payment reference is cut to 18 */
+  requestTitleMaxLength: 40,
+  requestNoteMaxLength: 140,
+  /** People one split can ask, and the largest bill a split can describe: £10,000 */
+  splitMaxShares: 20,
+  splitMaxTotalMinor: 10_000_00,
+  /** POST /requests and POST /splits per user per minute */
+  requestCreationsPerMinute: 20,
+  /** Reminder calls per user per minute, on top of the once-per-24h rule per request */
+  reminderCallsPerMinute: 30,
+  /** Public pages (invite and split links) per IP per minute */
+  publicPagesPerMinutePerIp: 60,
 } as const;
 
 export type Limits = typeof LIMITS;
