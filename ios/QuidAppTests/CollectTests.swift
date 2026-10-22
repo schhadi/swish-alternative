@@ -136,6 +136,7 @@ final class CollectTests: XCTestCase {
         XCTAssertEqual(viewModel.dueReminderCount, 0)
         await viewModel.remindAll()
         XCTAssertEqual(viewModel.notice, "Everyone you can remind was reminded in the last day. 8 people aren't on Quid: send them the link.")
+        XCTAssertTrue(viewModel.hasRemindableUnpaid)
     }
 
     func testClosingStopsRemindersAndTheLink() async throws {
@@ -202,6 +203,14 @@ final class CollectTests: XCTestCase {
         XCTAssertTrue(home.collectionDues.isEmpty, "paid shares leave Home")
         let again = try await environment.api.send(API.collectionsDue()).collections.first { $0.collectionId == "col_bills" }
         XCTAssertEqual(again?.status, .paid)
+    }
+
+    func testAShareWhoseTitleHasNoPlainLettersCanStillBePaid() async {
+        let environment = await environment()
+        let due = CollectionDueDTO(memberId: "m", collectionId: "c", title: "旅行押金 🎉", organisationName: "Club", amountPerPersonMinor: 1000, dueAt: nil, collectionStatus: .open, status: .unpaid, paidAt: nil, link: "https://quid.example/c/x")
+        let viewModel = PayViewModel(environment: environment, target: nil, collectionDue: due)
+        XCTAssertEqual(viewModel.reference, "Quid split", "the same fallback the server uses")
+        XCTAssertTrue(viewModel.canPay)
     }
 
     func testReminderSummaryWording() {

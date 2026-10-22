@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { collectOpsForDeletedUser } from "../services/collections/service.js";
 import { closeRequestsForDeletedUser } from "../services/requests/service.js";
 import { z } from "zod";
 import { currentUser, requireAuth } from "../lib/auth.js";
@@ -84,11 +85,13 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
   app.delete("/me", { preHandler: requireAuth }, async (request, reply) => {
     const { id } = currentUser(request);
     const user = await prisma.user.findUniqueOrThrow({ where: { id }, select: { phoneE164: true } });
+    const collectOps = await collectOpsForDeletedUser(id);
     await prisma.$transaction([
       prisma.session.deleteMany({ where: { userId: id } }),
       prisma.bankAccount.deleteMany({ where: { userId: id } }),
       ...(user.phoneE164 ? [prisma.otpChallenge.deleteMany({ where: { phoneE164: user.phoneE164 } })] : []),
       closeRequestsForDeletedUser(id),
+      ...collectOps,
       prisma.user.update({
         where: { id },
         data: { phoneE164: null, phoneHash: null, inviteCode: null, displayName: "Deleted user", deletedAt: new Date() },

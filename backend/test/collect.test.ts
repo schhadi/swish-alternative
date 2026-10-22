@@ -188,6 +188,28 @@ describe("Collect: organisations, collections, reminders, dues", () => {
     });
   });
 
+  describe("account deletion", () => {
+    it("takes a deleted member off Quid on every list, so nobody reminds them", async () => {
+      const org = await hockeyClub();
+      const detail = await tripDeposit(org.id);
+      expect((await ctx.app.inject({ method: "DELETE", url: "/me", headers: bearer(priya.token) })).statusCode).toBe(204);
+      const after = (await get(sam.token, `/orgs/${org.id}/collections/${detail.collection.id}`)).json();
+      expect(after.members[0]).toMatchObject({ displayName: "Deleted user", isOnQuid: false });
+      const reminded = (await post(sam.token, `/collections/${detail.collection.id}/remind`)).json();
+      expect(reminded.reminded).toEqual([detail.members[2].id]);
+    });
+
+    it("closes the collections of an organisation left with no treasurer", async () => {
+      const org = await hockeyClub();
+      const detail = await tripDeposit(org.id);
+      expect((await ctx.app.inject({ method: "DELETE", url: "/me", headers: bearer(sam.token) })).statusCode).toBe(204);
+      expect(await prisma.orgMember.count({ where: { orgId: org.id } })).toBe(0);
+      expect((await prisma.collection.findUniqueOrThrow({ where: { id: detail.collection.id } })).status).toBe("CLOSED");
+      const page = await ctx.app.inject({ method: "GET", url: `/c/${detail.collection.slug}`, headers: { accept: "application/json" } });
+      expect(page.statusCode).toBe(410);
+    });
+  });
+
   describe("paying from the app", () => {
     it("lets a member pay their share to the organisation and marks them paid when the bank executes", async () => {
       const org = await hockeyClub();
@@ -219,6 +241,19 @@ describe("Collect: organisations, collections, reminders, dues", () => {
       await prisma.payment.create({ data: { payerUserId: priya.userId, payeeUserId: sam.userId, amountMinor: 48000, reference: "Earlier", status: "SETTLED" } });
       expect((await post(priya.token, "/payments", { collectionId: detail.collection.id })).json().error).toBe("limit_24h");
       expect(await prisma.payment.count({ where: { collectionId: detail.collection.id } })).toBe(0);
+    });
+
+    it("records a second payment for someone already paid instead of losing it", async () => {
+      const org = await hockeyClub();
+      const detail = await tripDeposit(org.id);
+      const first = (await post(priya.token, "/payments", { collectionId: detail.collection.id })).json();
+      const second = (await post(priya.token, "/payments", { collectionId: detail.collection.id })).json();
+      await ctx.app.inject({ method: "POST", url: `/dev/payments/${first.tlPaymentId}/advance`, payload: { to: "executed" } });
+      await ctx.app.inject({ method: "POST", url: `/dev/payments/${second.tlPaymentId}/advance`, payload: { to: "executed" } });
+      const after = (await get(sam.token, `/orgs/${org.id}/collections/${detail.collection.id}`)).json();
+      expect(after.members.filter((member: { displayName: string; status: string }) => member.displayName === "Priya Patel" && member.status === "PAID")).toHaveLength(2);
+      expect(after.collection.paidCount).toBe(2);
+      expect((await get(priya.token, "/collections/due")).json().collections).toHaveLength(1);
     });
 
     it("stops payments and reminders once the treasurer closes the collection", async () => {

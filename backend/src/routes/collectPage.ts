@@ -4,6 +4,7 @@ import { prisma } from "../lib/db.js";
 import { HttpError } from "../lib/errors.js";
 import { escapeHtml, sendHtmlPage } from "../lib/html.js";
 import { normaliseUKPhone } from "../lib/phone.js";
+import { LIMITS } from "../limits.js";
 import { createCollectionPayment, SLUG_PATTERN } from "../services/collections/service.js";
 import { visibleLength } from "../services/requests/rules.js";
 
@@ -61,9 +62,9 @@ ${form.error ? `<div class="error" role="alert">${escapeHtml(form.error)}</div>`
 <form method="post" action="/c/${encodeURIComponent(collection.slug)}/pay">
 <label for="name">Your name</label>
 <input id="name" name="displayName" required maxlength="60" autocomplete="name" value="${escapeHtml(form.displayName ?? "")}">
-<label for="phone">Mobile number (optional)</label>
-<input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" value="${escapeHtml(form.phone ?? "")}">
-<p class="small">Your name tells ${org} who paid. Your bank may ask for your number.</p>
+<label for="phone">Mobile number</label>
+<input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required maxlength="20" value="${escapeHtml(form.phone ?? "")}">
+<p class="small">Your name tells ${org} who paid. The payment service needs your number to confirm the payment with your bank; it isn't shown to ${org} or kept by Quid.</p>
 <button class="primary" type="submit">Pay ${price} with your bank</button>
 </form>
 <p class="small">You approve the payment in your own banking app and it goes straight from your bank to theirs. Quid never holds your money.</p>`,
@@ -71,21 +72,32 @@ ${form.error ? `<div class="error" role="alert">${escapeHtml(form.error)}</div>`
   );
 }
 
-export async function collectPageRoutes(app: FastifyInstance, options: { pagesPerMinute: number; paymentsPerMinute: number }): Promise<void> {
-  // The page's form posts urlencoded; parsed here without a dependency.
-  app.addContentTypeParser("application/x-www-form-urlencoded", { parseAs: "string" }, (_request, body, done) => {
-    done(null, Object.fromEntries(new URLSearchParams(typeof body === "string" ? body : body.toString("utf8"))));
-  });
-
+export async function collectPageRoutes(
+  app: FastifyInstance,
+  options: { pagesPerMinute: number; paymentsPerMinute: number; returnPagesPerMinute: number },
+): Promise<void> {
   const pageLimit = app.rateLimit({ max: options.pagesPerMinute, timeWindow: "1 minute" });
   const payLimit = app.rateLimit({ max: options.paymentsPerMinute, timeWindow: "1 minute" });
+  const returnLimit = app.rateLimit({ max: options.returnPagesPerMinute, timeWindow: "1 minute" });
+
+  // A browser that hits a cap gets a page, not JSON. Everything else goes to the app's error handler.
+  app.setErrorHandler((error, request, reply) => {
+    const status = (error as { statusCode?: unknown }).statusCode;
+    if (status === 429 && !wantsJson(request)) {
+      return sendHtmlPage(reply, 429, "Too many tries", `<h1>Too many tries from this network</h1>
+<p>Wait a minute and try again. Nothing has been charged.</p>`);
+    }
+    throw error;
+  });
 
   /**
    * Where the bank sends someone who paid from the page. Shows the payment's state and refreshes itself while the
    * bank is still working. Found by the provider's payment id, which only the payer's browser holds.
    */
-  app.get("/c/return", { onRequest: pageLimit }, async (request, reply) => {
-    const { payment_id: providerPaymentId } = z.object({ payment_id: z.string().min(1).max(128).optional() }).parse(request.query);
+  app.get("/c/return", { onRequest: returnLimit }, async (request, reply) => {
+    const { payment_id: providerPaymentId, n } = z
+      .object({ payment_id: z.string().min(1).max(128).optional(), n: z.coerce.number().int().min(0).max(1000).optional() })
+      .parse(request.query);
     const payment = providerPaymentId
       ? await prisma.payment.findUnique({
           where: { tlPaymentId: providerPaymentId },
@@ -109,6 +121,13 @@ export async function collectPageRoutes(app: FastifyInstance, options: { pagesPe
 <p>Nothing has been sent to ${org}.</p>
 <a class="button primary" href="/c/${encodeURIComponent(payment.collection.slug)}">Try again</a>`);
     }
+    // Refreshes itself (to the same address with a count) for about two minutes, then stops asking.
+    const tries = n ?? 0;
+    if (tries >= LIMITS.collectReturnMaxRefreshes) {
+      return sendHtmlPage(reply, 200, "Still waiting for your bank", `<span class="status pending">Pending</span>
+<h1>Still waiting for your bank</h1>
+<p>${what} to ${org}. If your bank says it has gone, it has: ${org} will see it shortly. You can close this page.</p>`);
+    }
     return sendHtmlPage(
       reply,
       200,
@@ -116,7 +135,7 @@ export async function collectPageRoutes(app: FastifyInstance, options: { pagesPe
       `<span class="status pending">Pending</span>
 <h1>Waiting for your bank</h1>
 <p>${what} to ${org}. This page updates by itself; it usually takes a few seconds.</p>`,
-      { refreshSeconds: 3 },
+      { refreshSeconds: 3, refreshUrl: `/c/return?payment_id=${encodeURIComponent(providerPaymentId ?? "")}&n=${tries + 1}` },
     );
   });
 
@@ -148,9 +167,12 @@ export async function collectPageRoutes(app: FastifyInstance, options: { pagesPe
       const displayName = (body.displayName ?? "").trim().replace(/\s+/g, " ");
       if (displayName.length === 0) throw new HttpError(400, "invalid_name", "Enter your name, so they know who paid.");
       if (visibleLength(displayName) > 60) throw new HttpError(400, "invalid_name", "Keep your name to 60 characters.");
+      // TrueLayer needs the payer's name and number for clients that are not regulated themselves (docs/SPEC.md
+      // section 6), so the number is required here although SPEC 5 marks it optional (docs/DECISIONS.md #85).
       const rawPhone = (body.phone ?? "").trim();
-      const phoneE164 = rawPhone ? normaliseUKPhone(rawPhone) : null;
-      if (rawPhone && !phoneE164) throw new HttpError(400, "invalid_phone", "Enter a UK mobile number, like 07700 900123, or leave it empty.");
+      if (!rawPhone) throw new HttpError(400, "phone_required", "Enter your mobile number. The payment service needs it to confirm the payment with your bank.");
+      const phoneE164 = normaliseUKPhone(rawPhone);
+      if (!phoneE164) throw new HttpError(400, "invalid_phone", "Enter a UK mobile number, like 07700 900123.");
       const started = await createCollectionPayment(
         app.services.paymentProvider,
         { slug, payer: { kind: "link", displayName, phoneE164 } },

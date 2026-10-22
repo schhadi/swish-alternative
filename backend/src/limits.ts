@@ -59,8 +59,16 @@ export const LIMITS = {
   collectionMaxMembers: 200,
   /** A due date can be at most this far ahead */
   collectionMaxDueDays: 366,
-  /** Payments started from a collection's public page, per IP per minute */
-  publicPaymentsPerMinutePerIp: 10,
+  /**
+   * The collection page is opened by a whole club at once, often behind one campus or mobile network address, so its
+   * per-IP caps are generous; the slug space (31^8) is what makes guessing links pointless, not the cap. The return
+   * page refreshes itself every few seconds while the bank works, so it has its own, larger bucket.
+   */
+  collectPagesPerMinutePerIp: 300,
+  collectReturnPagesPerMinutePerIp: 600,
+  publicPaymentsPerMinutePerIp: 60,
+  /** The return page stops refreshing itself after this many tries (about two minutes) */
+  collectReturnMaxRefreshes: 40,
 } as const;
 
 export type Limits = typeof LIMITS;

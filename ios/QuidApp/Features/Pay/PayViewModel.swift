@@ -67,7 +67,9 @@ final class PayViewModel {
             self.target = PayTarget(userId: "collection-\(collectionDue.collectionId)", displayName: collectionDue.organisationName)
             rootIsPicker = false
             amountText = PayViewModel.text(fromMinor: collectionDue.amountPerPersonMinor)
-            reference = PayViewModel.cleanReference(collectionDue.title)
+            // The server sets the reference from the title, falling back the same way for titles with no plain letters.
+            let cleaned = PayViewModel.cleanReference(collectionDue.title).trimmingCharacters(in: .whitespaces)
+            reference = cleaned.isEmpty ? "Quid split" : cleaned
         } else if let request {
             self.target = PayTarget(userId: request.requesterUserId, displayName: request.requester.displayName)
             rootIsPicker = false
@@ -123,7 +125,8 @@ final class PayViewModel {
     }
 
     var canPay: Bool {
-        target != nil && targetCanReceive && amountMinor > 0 && !exceedsPerPaymentLimit && referenceIsValid && !isSubmitting
+        // A request or a collection brings its own reference, which the server sets; only a typed one is checked here.
+        target != nil && targetCanReceive && amountMinor > 0 && !exceedsPerPaymentLimit && (isFixedAmount || referenceIsValid) && !isSubmitting
     }
 
     var payButtonTitle: String {

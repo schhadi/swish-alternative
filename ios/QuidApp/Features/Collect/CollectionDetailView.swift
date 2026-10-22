@@ -54,7 +54,9 @@ struct CollectionDetailView: View {
                     .disabled(viewModel.dueReminderCount == 0)
                     .accessibilityIdentifier("collection.remindAll")
                     if viewModel.dueReminderCount == 0 {
-                        Text("Everyone unpaid on Quid was reminded in the last day.")
+                        Text(viewModel.hasRemindableUnpaid
+                            ? "Everyone unpaid on Quid was reminded in the last day."
+                            : "Nobody unpaid uses Quid. Send them the pay link instead.")
                             .font(.quidFootnote)
                             .foregroundStyle(Color.quidMuted)
                     }

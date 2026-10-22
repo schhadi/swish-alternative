@@ -104,6 +104,27 @@ export async function loadTreasurerOrganisation(orgId: string, userId: string) {
   return prisma.organisation.findUniqueOrThrow({ where: { id: orgId } });
 }
 
+/**
+ * Account deletion (docs/DECISIONS.md #89): the user's rows on collection lists lose their link to the account and
+ * their name, so they are no longer "on Quid" and can't be reminded; their treasurer roles end; and organisations
+ * left with no treasurer stop taking payments, since nobody could see or manage them.
+ */
+export async function collectOpsForDeletedUser(userId: string, now: Date = new Date()) {
+  const treasuries = await prisma.orgMember.findMany({ where: { userId, role: "TREASURER" }, select: { orgId: true } });
+  const orgIds = treasuries.map((row) => row.orgId);
+  const stillLooked = await prisma.orgMember.findMany({
+    where: { orgId: { in: orgIds }, role: "TREASURER", userId: { not: userId } },
+    select: { orgId: true },
+  });
+  const covered = new Set(stillLooked.map((row) => row.orgId));
+  const orphaned = orgIds.filter((orgId) => !covered.has(orgId));
+  return [
+    prisma.collectionMember.updateMany({ where: { userId }, data: { userId: null, displayName: "Deleted user" } }),
+    prisma.orgMember.deleteMany({ where: { userId } }),
+    prisma.collection.updateMany({ where: { orgId: { in: orphaned }, status: "OPEN" }, data: { status: "CLOSED", closedAt: now } }),
+  ];
+}
+
 // ---------- Collections ----------
 
 export const collectionInclude = {

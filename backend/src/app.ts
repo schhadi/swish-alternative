@@ -44,7 +44,8 @@ export interface BuildAppOptions {
    * every injected request shares 127.0.0.1, so a file of tests would trip the production cap.
    */
   authRequestsPerMinutePerIp?: number;
-  /** Per-IP caps on the public collection page and on payments started from it; tunable for the same reason. */
+  /** Per-IP caps on the public collection page and on payments started from it; tunable for the same reason (and
+   * the auth cap's: every injected request comes from one address). */
   publicPagesPerMinutePerIp?: number;
   publicPaymentsPerMinutePerIp?: number;
   /** Fastify's trustProxy (default env.TRUST_PROXY). Tests set it to prove per-IP limits key on X-Forwarded-For. */
@@ -130,6 +131,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     return reply.status(404).send({ error: "not_found", message: "No such route" });
   });
 
+  // HTML forms (the collection pay page, the dev bank's Approve / Decline) post urlencoded bodies, often empty.
+  // Parsed here for every route, without a dependency.
+  app.addContentTypeParser("application/x-www-form-urlencoded", { parseAs: "string" }, (_request, body, done) => {
+    done(null, Object.fromEntries(new URLSearchParams(typeof body === "string" ? body : body.toString("utf8"))));
+  });
+
   // Opt-in per route via `config: { rateLimit: {...} }`; see docs/SPEC.md section 7.
   app.register(rateLimit, { global: false });
 
@@ -143,8 +150,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.register(linkRoutes);
   app.register(organisationRoutes);
   app.register(collectPageRoutes, {
-    pagesPerMinute: options.publicPagesPerMinutePerIp ?? LIMITS.publicPagesPerMinutePerIp,
+    pagesPerMinute: options.publicPagesPerMinutePerIp ?? LIMITS.collectPagesPerMinutePerIp,
     paymentsPerMinute: options.publicPaymentsPerMinutePerIp ?? LIMITS.publicPaymentsPerMinutePerIp,
+    returnPagesPerMinute: LIMITS.collectReturnPagesPerMinutePerIp,
   });
   app.register(webhookRoutes);
   if (services.paymentProvider instanceof FakePaymentProvider) {

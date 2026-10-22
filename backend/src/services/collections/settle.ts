@@ -30,9 +30,17 @@ export async function settleCollectionPayment(paymentId: string, log: FastifyBas
         where: { id: payment.collectionMemberId, status: "UNPAID" },
         data: { status: "PAID", paymentId, paidAt: at },
       });
-      return result.count === 1 ? payment.collectionMemberId : null;
+      if (result.count === 1) return payment.collectionMemberId;
+      // Already paid by another payment (two attempts both went through, or someone paid from the link under this
+      // name first): the money still arrived, so it gets its own paid row below instead of vanishing.
     }
-    const displayName = payment.payerDisplayName?.trim() || "Someone";
+    const payerName = payment.payerUserId
+      ? (await prisma.user.findUnique({ where: { id: payment.payerUserId }, select: { displayName: true } }))?.displayName
+      : payment.payerDisplayName;
+    const displayName = payerName?.trim() || "Someone";
+    if (payment.collectionMemberId) {
+      return addPaidRow(collectionId, displayName, paymentId, at);
+    }
     const unpaid = await prisma.collectionMember.findMany({
       where: { collectionId, status: "UNPAID" },
       orderBy: { createdAt: "asc" },
@@ -46,22 +54,27 @@ export async function settleCollectionPayment(paymentId: string, log: FastifyBas
       });
       if (result.count === 1) return match.id;
     }
-    try {
-      const created = await prisma.collectionMember.create({
-        data: { collectionId, userId: null, displayName, status: "PAID", paymentId, paidAt: at, createdAt: at },
-      });
-      return created.id;
-    } catch (error) {
-      // Another settlement of the same payment won the unique(paymentId) race.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return null;
-      throw error;
-    }
+    return addPaidRow(collectionId, displayName, paymentId, at);
   });
   if (!settled) return false;
   const collection = await prisma.collection.findUnique({ where: { id: collectionId }, select: { org: { select: { createdByUserId: true } } } });
   log.info({ collectionId, memberId: settled, paymentId }, "collection member paid");
   pushStub(log, "collection_paid", [collection?.org.createdByUserId, payment.payerUserId], { collectionId, paymentId });
   return true;
+}
+
+/** A paid row for a payment no unpaid member could take. */
+async function addPaidRow(collectionId: string, displayName: string, paymentId: string, at: Date): Promise<string | null> {
+  try {
+    const created = await prisma.collectionMember.create({
+      data: { collectionId, userId: null, displayName, status: "PAID", paymentId, paidAt: at, createdAt: at },
+    });
+    return created.id;
+  } catch (error) {
+    // Another settlement of the same payment won the unique(paymentId) race.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return null;
+    throw error;
+  }
 }
 
 /**

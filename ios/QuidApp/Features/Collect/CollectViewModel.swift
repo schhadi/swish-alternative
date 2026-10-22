@@ -111,6 +111,11 @@ final class CollectionDetailViewModel {
         members.filter { canRemind($0) }.count
     }
 
+    /// Someone unpaid could ever be reminded: they use Quid. People added by name can only be sent the link.
+    var hasRemindableUnpaid: Bool {
+        members.contains { $0.status == .unpaid && ($0.isOnQuid ?? false) }
+    }
+
     private func apply(_ detail: CollectionDetailDTO) {
         collection = detail.collection
         organisationName = detail.organisationName

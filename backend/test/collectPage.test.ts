@@ -51,7 +51,7 @@ describe("the public collection page", () => {
   }
 
   function payJson(payload: Record<string, unknown>) {
-    return ctx.app.inject({ method: "POST", url: `/c/${slug}/pay`, payload });
+    return ctx.app.inject({ method: "POST", url: `/c/${slug}/pay`, payload: { phone: "07700 900123", ...payload } });
   }
 
   function payForm(fields: Record<string, string>) {
@@ -172,7 +172,7 @@ describe("the public collection page", () => {
   });
 
   it("sends the page's form straight to the bank, or shows it again with the problem", async () => {
-    const redirected = await payForm({ displayName: "Jamie Lee", phone: "" });
+    const redirected = await payForm({ displayName: "Jamie Lee", phone: "07700 900123" });
     expect(redirected.statusCode).toBe(303);
     expect(redirected.headers.location).toContain("/dev/authorise/");
 
@@ -208,10 +208,57 @@ describe("the public collection page", () => {
     expect((await pollInFlightPayments(ctx.provider, silentLog)).requestsSettled).toBe(0);
   });
 
+  it("needs the payer's mobile number, which the payment service requires, and never keeps it", async () => {
+    const missing = await payJson({ displayName: "Jamie Lee", phone: "" });
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json().error).toBe("phone_required");
+    const form = await payForm({ displayName: "Jamie Lee", phone: "" });
+    expect(form.statusCode).toBe(400);
+    expect(form.body).toContain("Enter your mobile number");
+    expect(await prisma.payment.count()).toBe(0);
+  });
+
+  it("lets a browser approve on the fake bank page, whose form posts an empty urlencoded body", async () => {
+    const { paymentId, authorisationUrl } = (await payJson({ displayName: "Jamie Lee" })).json();
+    const providerId = authorisationUrl.split("/dev/authorise/")[1] as string;
+    const approved = await ctx.app.inject({
+      method: "POST",
+      url: `/dev/authorise/${providerId}/approve`,
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      payload: "",
+    });
+    expect(approved.statusCode).toBe(303);
+    expect((await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } })).status).toBe("AUTHORIZED");
+  });
+
+  it("gives the return page its own bucket, stops refreshing after about two minutes, and shows a page when a cap is hit", async () => {
+    const limited = await createTestApp({ publicPagesPerMinutePerIp: 1 });
+    try {
+      const { authorisationUrl } = (await limited.app.inject({ method: "POST", url: `/c/${slug}/pay`, payload: { displayName: "Jamie Lee", phone: "07700 900123" } })).json();
+      const providerId = authorisationUrl.split("/dev/authorise/")[1] as string;
+      const browser = { accept: "text/html" };
+      expect((await limited.app.inject({ method: "GET", url: `/c/${slug}`, headers: browser })).statusCode).toBe(200);
+      const capped = await limited.app.inject({ method: "GET", url: `/c/${slug}`, headers: browser });
+      expect(capped.statusCode).toBe(429);
+      expect(capped.headers["content-type"]).toContain("text/html");
+      expect(capped.body).toContain("Too many tries");
+      expect((await limited.app.inject({ method: "GET", url: `/c/${slug}`, headers: { accept: "application/json" } })).json().error).toBe("rate_limited");
+
+      const waiting = await limited.app.inject({ method: "GET", url: `/c/return?payment_id=${providerId}`, headers: browser });
+      expect(waiting.statusCode).toBe(200);
+      expect(waiting.body).toContain(`url=/c/return?payment_id=${providerId}&amp;n=1`);
+      const last = await limited.app.inject({ method: "GET", url: `/c/return?payment_id=${providerId}&n=40`, headers: browser });
+      expect(last.body).toContain("Still waiting for your bank");
+      expect(last.body).not.toContain('http-equiv="refresh"');
+    } finally {
+      await limited.app.close();
+    }
+  });
+
   it("caps payments started from the page per IP", async () => {
     const limited = await createTestApp({ publicPaymentsPerMinutePerIp: 2 });
     try {
-      const send = () => limited.app.inject({ method: "POST", url: `/c/${slug}/pay`, payload: { displayName: "Jamie Lee" } });
+      const send = () => limited.app.inject({ method: "POST", url: `/c/${slug}/pay`, payload: { displayName: "Jamie Lee", phone: "07700 900123" } });
       expect((await send()).statusCode).toBe(201);
       expect((await send()).statusCode).toBe(201);
       expect((await send()).statusCode).toBe(429);

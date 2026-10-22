@@ -21,8 +21,9 @@ input{box-sizing:border-box;width:100%;height:50px;border:1px solid #DDE3DF;bord
 @media (prefers-color-scheme: dark){body{background:#0F1412;color:#EEF2F0}main{background:#18201D;border-color:#26302C}p{color:#A3B0AA}.secondary{background:#26302C;color:#EEF2F0}input{background:#0F1412;color:#EEF2F0;border-color:#26302C}}`;
 
 /** A whole page. `title` and every interpolated value in `body` must already be escaped. */
-export function htmlPage(title: string, body: string, options: { refreshSeconds?: number } = {}): string {
-  const refresh = options.refreshSeconds ? `\n<meta http-equiv="refresh" content="${options.refreshSeconds}">` : "";
+export function htmlPage(title: string, body: string, options: { refreshSeconds?: number; refreshUrl?: string } = {}): string {
+  const target = options.refreshUrl ? `; url=${escapeHtml(options.refreshUrl)}` : "";
+  const refresh = options.refreshSeconds ? `\n<meta http-equiv="refresh" content="${options.refreshSeconds}${target}">` : "";
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">${refresh}
@@ -49,7 +50,7 @@ export function sendHtmlPage(
   status: number,
   title: string,
   body: string,
-  options: { forms?: boolean; refreshSeconds?: number } = {},
+  options: { forms?: boolean; refreshSeconds?: number; refreshUrl?: string } = {},
 ) {
   const csp = ["default-src 'none'", "style-src 'unsafe-inline'", "base-uri 'none'", "frame-ancestors 'none'", ...(options.forms ? [] : ["form-action 'none'"])].join("; ");
   return reply
@@ -59,5 +60,5 @@ export function sendHtmlPage(
     .header("x-content-type-options", "nosniff")
     .header("content-security-policy", csp)
     .type("text/html; charset=utf-8")
-    .send(htmlPage(escapeHtml(title), body, { refreshSeconds: options.refreshSeconds }));
+    .send(htmlPage(escapeHtml(title), body, { refreshSeconds: options.refreshSeconds, refreshUrl: options.refreshUrl }));
 }
