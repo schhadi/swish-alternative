@@ -18,6 +18,8 @@ final class HomeViewModel {
     private(set) var me: MeDTO?
     private(set) var payments: [PaymentDTO] = []
     private(set) var incomingRequests: [PaymentRequestDTO] = []
+    /// Collections the user is on the list of and still owes (open and unpaid).
+    private(set) var collectionDues: [CollectionDueDTO] = []
     /// Why the last Decline didn't go through; shown under the requests.
     private(set) var requestError: String?
     private(set) var decliningIds: Set<String> = []
@@ -116,10 +118,12 @@ final class HomeViewModel {
             async let sentTask = api.send(API.payments(role: .sent))
             async let receivedTask = api.send(API.payments(role: .received))
             async let requestsTask = api.send(API.incomingRequests())
-            let (me, sent, received, requests) = try await (meTask, sentTask, receivedTask, requestsTask)
+            async let duesTask = api.send(API.collectionsDue())
+            let (me, sent, received, requests, dues) = try await (meTask, sentTask, receivedTask, requestsTask, duesTask)
             self.me = me
             self.payments = (sent.payments + received.payments).sorted { $0.createdAt > $1.createdAt }
             self.incomingRequests = requests.requests.filter { $0.status == .pending }
+            self.collectionDues = dues.collections.filter(\.isPayable)
             self.error = nil
             hasLoaded = true
         } catch is CancellationError {

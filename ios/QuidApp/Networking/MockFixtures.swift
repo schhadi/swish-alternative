@@ -13,6 +13,11 @@ final class MockProfileState: @unchecked Sendable {
     var createdSplits: [MockSplit] = []
     var declinedRequestIds: Set<String> = []
     var reminders: [String: MockReminder] = [:]
+    /// Phase 4: organisations and collections created this launch, member reminders by member id, closed collections.
+    var createdOrganisations: [MockOrganisation] = []
+    var createdCollections: [MockCollection] = []
+    var memberReminders: [String: MockReminder] = [:]
+    var closedCollectionIds: Set<String> = []
 
     /// `complete` = an existing user with name and bank (the demo); otherwise a brand-new user.
     func reset(complete: Bool) {
@@ -25,6 +30,10 @@ final class MockProfileState: @unchecked Sendable {
         createdSplits = []
         declinedRequestIds = []
         reminders = [:]
+        createdOrganisations = []
+        createdCollections = []
+        memberReminders = [:]
+        closedCollectionIds = []
     }
 
     var isComplete: Bool {
@@ -43,6 +52,8 @@ struct MockCreatedPayment: Sendable {
     let createdAt: Date
     /// Set when the payment pays an incoming request.
     var requestId: String? = nil
+    /// Set when the payment pays a collection share; the payee is then the organisation.
+    var collectionId: String? = nil
 
     func status(at now: Date = Date()) -> String {
         let age = now.timeIntervalSince(createdAt)
@@ -95,6 +106,37 @@ struct MockShareState: Sendable {
     }
 }
 
+struct MockOrganisation: Sendable {
+    let id: String
+    let name: String
+    let kind: String
+    let bankName: String
+}
+
+/// A collection the demo user looks after. In one created this launch, anyone called Priya Patel pays five seconds
+/// after it is created, so the treasurer view shows someone flipping to Paid.
+struct MockCollection: Sendable {
+    struct Member: Sendable {
+        let id: String
+        let name: String
+        let isOnQuid: Bool
+        let paidAt: Date?
+        let remindCount: Int
+        let remindedAt: Date?
+    }
+
+    let id: String
+    let orgId: String
+    let orgName: String
+    let title: String
+    let amountMinor: Int
+    let dueAt: Date?
+    let slug: String
+    let status: String
+    let createdAt: Date
+    let members: [Member]
+}
+
 /// A request addressed to the demo user.
 struct MockIncomingRequest: Sendable {
     let id: String
@@ -125,9 +167,6 @@ enum MockFixtures {
             "POST /auth/logout": .empty(),
             "GET /payments/p_1001": .json(sentPayments[0]),
             "GET /providers": .json(providers()),
-            "GET /orgs/org_hockey/collections/col_trip": .json(tripCollectionDetail()),
-            "GET /orgs/org_hockey/collections/col_kit": .json(kitCollectionDetail()),
-            "GET /orgs/org_flat/collections/col_bills": .json(billsCollectionDetail()),
         ]
     }
 
@@ -155,6 +194,9 @@ enum MockFixtures {
             "POST /payments": { request in
                 if let pay = request.decode(PayRequestBody.self) {
                     return payIncomingRequest(pay)
+                }
+                if let pay = request.decode(PayCollectionBody.self) {
+                    return payCollectionDue(pay)
                 }
                 guard let body = request.decode(CreatePaymentRequest.self) else {
                     return .json(#"{"error":"validation_error","message":"Request failed validation"}"#, status: 400)
@@ -271,6 +313,65 @@ enum MockFixtures {
                 .json(#"{"code":"sam2k7qx","url":"https://quid.example/i/sam2k7qx","message":"I'm using Quid to pay friends by phone number. Join me:"}"#)
             },
             "GET /orgs": { _ in .json(state.isComplete ? organisations() : #"{"organisations":[]}"#) },
+            "POST /orgs": { request in
+                guard let body = request.decode(CreateOrganisationRequest.self) else {
+                    return .json(#"{"error":"validation_error","message":"Request failed validation"}"#, status: 400)
+                }
+                return createOrganisation(body)
+            },
+            "POST /orgs/*": { request in
+                // POST /orgs/<id>/collections
+                let parts = request.path.split(separator: "/").map(String.init)
+                guard parts.count == 3, parts[2] == "collections", let body = request.decode(CreateCollectionRequest.self) else {
+                    return .json(#"{"error":"validation_error","message":"Request failed validation"}"#, status: 400)
+                }
+                return createCollection(orgId: parts[1], body)
+            },
+            "GET /orgs/*": { request in
+                // GET /orgs/<id>/collections/<cid>
+                let parts = request.path.split(separator: "/").map(String.init)
+                guard parts.count == 4, let collection = allCollections().first(where: { $0.id == parts[3] && $0.orgId == parts[1] }) else {
+                    return collectionNotFound
+                }
+                return .json(collectionDetailJSON(collection))
+            },
+            "POST /collections/*": { request in
+                let parts = request.path.split(separator: "/").map(String.init)
+                guard parts.count == 3, let collection = allCollections().first(where: { $0.id == parts[1] }) else { return collectionNotFound }
+                switch parts[2] {
+                case "close":
+                    state.closedCollectionIds.insert(collection.id)
+                    return .json(collectionDetailJSON(allCollections().first { $0.id == collection.id } ?? collection))
+                case "remind":
+                    guard collection.status == "OPEN" else {
+                        return .json(#"{"error":"collection_closed","message":"This collection is closed."}"#, status: 409)
+                    }
+                    let wanted: Set<String>? = request.decode(RemindCollectionRequest.self)?.memberIds.map { Set($0) }
+                    let now = Date()
+                    var reminded: [String] = []
+                    var skipped: [String] = []
+                    for member in collection.members where wanted?.contains(member.id) ?? true {
+                        if member.paidAt != nil {
+                            if wanted != nil { skipped.append(#"{"memberId":"\#(member.id)","reason":"paid","nextReminderAt":null}"#) }
+                        } else if !member.isOnQuid {
+                            skipped.append(#"{"memberId":"\#(member.id)","reason":"not_on_quid","nextReminderAt":null}"#)
+                        } else if let last = member.remindedAt, last.addingTimeInterval(24 * 3600) > now {
+                            skipped.append(#"{"memberId":"\#(member.id)","reason":"too_soon","nextReminderAt":\#(jsonDate(last.addingTimeInterval(24 * 3600)))}"#)
+                        } else {
+                            state.memberReminders[member.id] = MockReminder(at: now, count: member.remindCount + 1)
+                            reminded.append("\"\(member.id)\"")
+                        }
+                    }
+                    let updated = allCollections().first { $0.id == collection.id } ?? collection
+                    return .json(#"{"reminded":[\#(reminded.joined(separator: ","))],"skipped":[\#(skipped.joined(separator: ","))],"detail":\#(collectionDetailJSON(updated))}"#)
+                default:
+                    return collectionNotFound
+                }
+            },
+            "GET /collections/due": { _ in
+                guard state.isComplete else { return .json(#"{"collections":[]}"#) }
+                return .json(#"{"collections":[\#(collectionDues().joined(separator: ","))]}"#)
+            },
             "POST /auth/otp/start": { request in
                 guard let body = request.decode(OtpStartRequest.self), let e164 = UKPhone.normalise(body.phone) else {
                     return .json(#"{"error":"invalid_phone","message":"Enter a UK mobile number, like 07700 900123."}"#, status: 400)
@@ -363,11 +464,14 @@ enum MockFixtures {
 
     static func createdPaymentJSON(_ created: MockCreatedPayment) -> String {
         let status = created.status()
-        let counterparty = #"{"userId":"\#(created.payeeUserId)","displayName":"\#(created.payeeName)"}"#
+        let counterparty = created.collectionId == nil
+            ? #"{"userId":"\#(created.payeeUserId)","displayName":"\#(created.payeeName)"}"#
+            : #"{"userId":null,"displayName":\#(jsonString(created.payeeName))}"#
         return payment(
             id: created.id,
             payer: meUserId,
-            payee: created.payeeUserId,
+            payee: created.collectionId == nil ? created.payeeUserId : nil,
+            collectionId: created.collectionId,
             amount: created.amountMinor,
             reference: created.reference,
             status: status,
@@ -380,8 +484,10 @@ enum MockFixtures {
     }
 
     /// The POST /payments answer for a payment the mock backend just created.
-    static func createdPaymentResponse(_ created: MockCreatedPayment, person: MockPerson, paidBefore: Bool) -> MockResponse {
-        .json(
+    static func createdPaymentResponse(_ created: MockCreatedPayment, person: MockPerson, paidBefore: Bool, payeeIsOrganisation: Bool = false) -> MockResponse {
+        let payeeId = payeeIsOrganisation ? "null" : "\"\(person.userId)\""
+        let holder = payeeIsOrganisation ? "Priya Patel" : person.accountHolderName
+        return .json(
             """
             {
               "paymentId": "\(created.id)",
@@ -390,7 +496,7 @@ enum MockFixtures {
               "authorisationUrl": "https://mock.quid.invalid/authorise/\(created.id)",
               "firstTimePayee": \(!paidBefore),
               "provider": "mock",
-              "payee": {"userId": "\(person.userId)", "displayName": "\(person.name)", "accountHolderName": \(paidBefore ? "null" : "\"\(person.accountHolderName)\""), "copStatus": "MATCH", "bankName": "\(person.bankName ?? "")"},
+              "payee": {"userId": \(payeeId), "displayName": \(jsonString(person.name)), "accountHolderName": \(paidBefore ? "null" : jsonString(holder)), "copStatus": "MATCH", "bankName": "\(person.bankName ?? "")"},
               "payment": \(createdPaymentJSON(created))
             }
             """,
@@ -747,52 +853,22 @@ enum MockFixtures {
 
     // MARK: - Collect
 
-    static func organisations() -> String {
-        """
-        {
-          "organisations": [
-            {
-              "id": "org_hockey",
-              "name": "SOAS Hockey Club",
-              "kind": "CLUB",
-              "role": "TREASURER",
-              "collections": [
-                \(collectionSummary(id: "col_trip", orgId: "org_hockey", title: "Trip deposit", amount: 3000, dueInDays: 6, slug: "hockey-trip-24", members: 12, paid: 7)),
-                \(collectionSummary(id: "col_kit", orgId: "org_hockey", title: "Kit order", amount: 1800, dueInDays: 20, slug: "hockey-kit-aw", members: 15, paid: 3))
-              ]
-            },
-            {
-              "id": "org_flat",
-              "name": "Flat 4B",
-              "kind": "FLAT",
-              "role": "MEMBER",
-              "collections": [
-                \(collectionSummary(id: "col_bills", orgId: "org_flat", title: "October bills", amount: 6240, dueInDays: 2, slug: "flat4b-oct", members: 4, paid: 2))
-              ]
-            }
-          ]
-        }
-        """
-    }
+    private static let collectionNotFound = MockResponse.json(#"{"error":"collection_not_found","message":"We couldn't find that collection."}"#, status: 404)
 
-    private static func collectionSummary(id: String, orgId: String, title: String, amount: Int, dueInDays: Int, slug: String, members: Int, paid: Int, status: String = "OPEN") -> String {
-        """
-        {
-          "id": "\(id)",
-          "orgId": "\(orgId)",
-          "title": "\(title)",
-          "amountPerPersonMinor": \(amount),
-          "dueAt": "\(iso(daysAgo: -dueInDays, hour: 18))",
-          "slug": "\(slug)",
-          "status": "\(status)",
-          "memberCount": \(members),
-          "paidCount": \(paid)
+    /// SOAS Hockey Club, which Sam looks after: Trip deposit (7 of 12 paid) and Kit order (3 of 15).
+    private static func fixtureCollections(now: Date) -> [MockCollection] {
+        func member(_ id: String, _ name: String, paidDaysAgo: Int?, reminded: Int = 0) -> MockCollection.Member {
+            let onQuid = ["Sam Okafor", "Priya Patel", "Tom Whitfield", "Amara Osei", "Jonas Berg"].contains(name)
+            return MockCollection.Member(
+                id: id,
+                name: name,
+                isOnQuid: onQuid,
+                paidAt: paidDaysAgo.map { now.addingTimeInterval(-Double($0) * 86400 - 3600) },
+                remindCount: reminded,
+                remindedAt: reminded > 0 ? now.addingTimeInterval(-30 * 3600) : nil
+            )
         }
-        """
-    }
-
-    static func tripCollectionDetail() -> String {
-        let members = [
+        let trip = [
             member("m1", "Sam Okafor", paidDaysAgo: 3),
             member("m2", "Priya Patel", paidDaysAgo: 4),
             member("m3", "Tom Whitfield", paidDaysAgo: 2),
@@ -801,62 +877,177 @@ enum MockFixtures {
             member("m6", "Leila Haddad", paidDaysAgo: 0),
             member("m7", "Daniel Mensah", paidDaysAgo: 0),
             member("m8", "Chloe Baxter", paidDaysAgo: nil, reminded: 1),
-            member("m9", "Yusuf Rahman", paidDaysAgo: nil, reminded: 0),
+            member("m9", "Yusuf Rahman", paidDaysAgo: nil),
             member("m10", "Hannah Doyle", paidDaysAgo: nil, reminded: 2),
-            member("m11", "Marco Ferrante", paidDaysAgo: nil, reminded: 0),
+            member("m11", "Marco Ferrante", paidDaysAgo: nil),
             member("m12", "Ines Oliveira", paidDaysAgo: nil, reminded: 1),
         ]
-        return collectionDetail(
-            summary: collectionSummary(id: "col_trip", orgId: "org_hockey", title: "Trip deposit", amount: 3000, dueInDays: 6, slug: "hockey-trip-24", members: 12, paid: 7),
-            organisationName: "SOAS Hockey Club",
-            members: members
-        )
-    }
-
-    static func kitCollectionDetail() -> String {
-        var members: [String] = [
+        var kit = [
             member("k1", "Sam Okafor", paidDaysAgo: 1),
             member("k2", "Leila Haddad", paidDaysAgo: 2),
             member("k3", "Daniel Mensah", paidDaysAgo: 2),
         ]
         let unpaid = ["Priya Patel", "Tom Whitfield", "Amara Osei", "Jonas Berg", "Chloe Baxter", "Yusuf Rahman", "Hannah Doyle", "Marco Ferrante", "Ines Oliveira", "Grace Nwosu", "Oliver Hart", "Mei Lin"]
         for (index, name) in unpaid.enumerated() {
-            members.append(member("k\(index + 4)", name, paidDaysAgo: nil, reminded: 0))
+            kit.append(member("k\(index + 4)", name, paidDaysAgo: nil))
         }
-        return collectionDetail(
-            summary: collectionSummary(id: "col_kit", orgId: "org_hockey", title: "Kit order", amount: 1800, dueInDays: 20, slug: "hockey-kit-aw", members: 15, paid: 3),
-            organisationName: "SOAS Hockey Club",
-            members: members
-        )
+        return [
+            MockCollection(id: "col_trip", orgId: "org_hockey", orgName: "SOAS Hockey Club", title: "Trip deposit", amountMinor: 3000, dueAt: now.addingTimeInterval(6 * 86400), slug: "hockeytr", status: "OPEN", createdAt: now.addingTimeInterval(-5 * 86400), members: trip),
+            MockCollection(id: "col_kit", orgId: "org_hockey", orgName: "SOAS Hockey Club", title: "Kit order", amountMinor: 1800, dueAt: now.addingTimeInterval(20 * 86400), slug: "hockeykt", status: "OPEN", createdAt: now.addingTimeInterval(-8 * 86400), members: kit),
+        ]
     }
 
-    static func billsCollectionDetail() -> String {
-        collectionDetail(
-            summary: collectionSummary(id: "col_bills", orgId: "org_flat", title: "October bills", amount: 6240, dueInDays: 2, slug: "flat4b-oct", members: 4, paid: 2),
-            organisationName: "Flat 4B",
-            members: [
-                member("b1", "Tom Whitfield", paidDaysAgo: 1),
-                member("b2", "Sam Okafor", paidDaysAgo: 0),
-                member("b3", "Amara Osei", paidDaysAgo: nil, reminded: 0),
-                member("b4", "Jonas Berg", paidDaysAgo: nil, reminded: 1),
-            ]
-        )
-    }
-
-    private static func collectionDetail(summary: String, organisationName: String, members: [String]) -> String {
-        """
-        {
-          "collection": \(summary),
-          "organisationName": "\(organisationName)",
-          "members": [\(members.joined(separator: ","))]
+    /// Every collection Sam looks after, newest first, with this launch's reminders, closures and auto-payments applied.
+    static func allCollections(now: Date = Date()) -> [MockCollection] {
+        let created = state.createdCollections.reversed().map { collection in
+            MockCollection(
+                id: collection.id, orgId: collection.orgId, orgName: collection.orgName, title: collection.title,
+                amountMinor: collection.amountMinor, dueAt: collection.dueAt, slug: collection.slug, status: collection.status,
+                createdAt: collection.createdAt,
+                members: collection.members.map { member in
+                    let paysItself = member.name == "Priya Patel" && now.timeIntervalSince(collection.createdAt) >= 5
+                    return MockCollection.Member(
+                        id: member.id, name: member.name, isOnQuid: member.isOnQuid,
+                        paidAt: paysItself ? collection.createdAt.addingTimeInterval(5) : member.paidAt,
+                        remindCount: member.remindCount, remindedAt: member.remindedAt
+                    )
+                }
+            )
         }
+        return (created + fixtureCollections(now: now)).map { collection in
+            MockCollection(
+                id: collection.id, orgId: collection.orgId, orgName: collection.orgName, title: collection.title,
+                amountMinor: collection.amountMinor, dueAt: collection.dueAt, slug: collection.slug,
+                status: state.closedCollectionIds.contains(collection.id) ? "CLOSED" : collection.status,
+                createdAt: collection.createdAt,
+                members: collection.members.map { member in
+                    guard let reminder = state.memberReminders[member.id] else { return member }
+                    return MockCollection.Member(id: member.id, name: member.name, isOnQuid: member.isOnQuid, paidAt: member.paidAt, remindCount: reminder.count, remindedAt: reminder.at)
+                }
+            )
+        }
+    }
+
+    private static var allOrganisations: [MockOrganisation] {
+        [MockOrganisation(id: "org_hockey", name: "SOAS Hockey Club", kind: "CLUB", bankName: "Monzo")] + state.createdOrganisations
+    }
+
+    static func organisations() -> String {
+        let collections = allCollections()
+        let items = allOrganisations.map { org in
+            let summaries = collections.filter { $0.orgId == org.id }.map(collectionSummaryJSON)
+            return #"{"id":"\#(org.id)","name":\#(jsonString(org.name)),"kind":"\#(org.kind)","role":"TREASURER","bankName":\#(jsonString(org.bankName)),"collections":[\#(summaries.joined(separator: ","))]}"#
+        }
+        return #"{"organisations":[\#(items.joined(separator: ","))]}"#
+    }
+
+    static func collectionSummaryJSON(_ collection: MockCollection) -> String {
+        let paid = collection.members.filter { $0.paidAt != nil }.count
+        return """
+        {"id":"\(collection.id)","orgId":"\(collection.orgId)","title":\(jsonString(collection.title)),"amountPerPersonMinor":\(collection.amountMinor),"dueAt":\(jsonDate(collection.dueAt)),"slug":"\(collection.slug)","status":"\(collection.status)","memberCount":\(collection.members.count),"paidCount":\(paid),"link":"https://quid.example/c/\(collection.slug)"}
         """
     }
 
-    private static func member(_ id: String, _ name: String, paidDaysAgo: Int?, reminded: Int = 0) -> String {
-        let status = paidDaysAgo == nil ? "UNPAID" : "PAID"
-        let paidAt = paidDaysAgo.map { "\"\(iso(daysAgo: $0, hour: 17))\"" } ?? "null"
-        return #"{"id":"\#(id)","displayName":"\#(name)","status":"\#(status)","paidAt":\#(paidAt),"remindCount":\#(reminded)}"#
+    static func collectionDetailJSON(_ collection: MockCollection) -> String {
+        let members = collection.members.map { member in
+            #"{"id":"\#(member.id)","displayName":\#(jsonString(member.name)),"status":"\#(member.paidAt == nil ? "UNPAID" : "PAID")","paidAt":\#(jsonDate(member.paidAt)),"remindCount":\#(member.remindCount),"lastRemindedAt":\#(jsonDate(member.remindedAt)),"nextReminderAt":\#(jsonDate(member.remindedAt?.addingTimeInterval(24 * 3600))),"isOnQuid":\#(member.isOnQuid)}"#
+        }
+        return #"{"collection":\#(collectionSummaryJSON(collection)),"organisationName":\#(jsonString(collection.orgName)),"members":[\#(members.joined(separator: ","))]}"#
+    }
+
+    static func createOrganisation(_ body: CreateOrganisationRequest) -> MockResponse {
+        let sortCode = body.bankAccount.sortCode.filter(\.isNumber)
+        let holder = body.bankAccount.accountHolderName.trimmingCharacters(in: .whitespaces)
+        // The same fixtures as linking a personal account: 999999 -> NO_MATCH; an all-lowercase name -> CLOSE_MATCH.
+        if sortCode == "999999" {
+            return .json(#"{"copStatus":"NO_MATCH"}"#)
+        }
+        if holder == holder.lowercased() {
+            return .json(#"{"copStatus":"CLOSE_MATCH","suggestedAccountHolderName":\#(jsonString(holder.capitalized))}"#)
+        }
+        let name = body.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            return .json(#"{"error":"invalid_name","message":"Enter a name."}"#, status: 400)
+        }
+        let org = MockOrganisation(id: "org_m\(state.createdOrganisations.count + 1)", name: name, kind: body.kind.rawValue, bankName: providerName(body.bankAccount.providerId) ?? "Their bank")
+        state.createdOrganisations.append(org)
+        return .json(#"{"copStatus":"MATCH","organisation":{"id":"\#(org.id)","name":\#(jsonString(org.name)),"kind":"\#(org.kind)","role":"TREASURER","bankName":\#(jsonString(org.bankName)),"collections":[]}}"#, status: 201)
+    }
+
+    static func createCollection(orgId: String, _ body: CreateCollectionRequest) -> MockResponse {
+        guard let org = allOrganisations.first(where: { $0.id == orgId }) else {
+            return .json(#"{"error":"organisation_not_found","message":"We couldn't find that organisation."}"#, status: 404)
+        }
+        let title = body.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else {
+            return .json(#"{"error":"invalid_title","message":"Enter a title."}"#, status: 400)
+        }
+        guard body.amountPerPersonMinor > 0, body.amountPerPersonMinor <= 25000 else {
+            return .json(#"{"error":"collection_over_limit","message":"Each person can pay up to £250, the most anyone can send in one payment."}"#, status: 400)
+        }
+        let number = state.createdCollections.count + 1
+        var members: [MockCollection.Member] = []
+        for (index, member) in body.members.enumerated() {
+            if let userId = member.userId {
+                guard let person = people[userId] else {
+                    return .json(#"{"error":"member_not_found","message":"We couldn't find one of those people on Quid."}"#, status: 404)
+                }
+                members.append(MockCollection.Member(id: "cm\(number)_\(index + 1)", name: person.name, isOnQuid: true, paidAt: nil, remindCount: 0, remindedAt: nil))
+            } else {
+                let name = (member.displayName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else {
+                    return .json(#"{"error":"invalid_member_name","message":"Enter each person's name."}"#, status: 400)
+                }
+                members.append(MockCollection.Member(id: "cm\(number)_\(index + 1)", name: name, isOnQuid: false, paidAt: nil, remindCount: 0, remindedAt: nil))
+            }
+        }
+        let collection = MockCollection(id: "col_m\(number)", orgId: org.id, orgName: org.name, title: title, amountMinor: body.amountPerPersonMinor, dueAt: body.dueAt, slug: "newcol\(number)x", status: "OPEN", createdAt: Date(), members: members)
+        state.createdCollections.append(collection)
+        guard let resolved = allCollections().first(where: { $0.id == collection.id }) else { return collectionNotFound }
+        return .json(collectionDetailJSON(resolved), status: 201)
+    }
+
+    /// Collections Sam is on the list of: Flat 4B's October bills (open, unpaid) and the climbing society's term fee (paid).
+    private static func dueFixtures(now: Date) -> [(id: String, collectionId: String, title: String, org: String, amount: Int, dueAt: Date?, paidAt: Date?)] {
+        [
+            (id: "due_bills", collectionId: "col_bills", title: "October bills", org: "Flat 4B", amount: 6240, dueAt: now.addingTimeInterval(2 * 86400), paidAt: nil),
+            (id: "due_climb", collectionId: "col_climb", title: "Autumn term membership", org: "SOAS Climbing Society", amount: 1500, dueAt: nil, paidAt: now.addingTimeInterval(-9 * 86400)),
+        ]
+    }
+
+    private static func duePayment(_ collectionId: String) -> MockCreatedPayment? {
+        state.createdPayments.first { $0.collectionId == collectionId && $0.status() != "AUTHORIZING" }
+    }
+
+    static func collectionDues(now: Date = Date()) -> [String] {
+        dueFixtures(now: now).map { due in
+            let paidAt = due.paidAt ?? duePayment(due.collectionId)?.createdAt.addingTimeInterval(2)
+            return #"{"memberId":"\#(due.id)","collectionId":"\#(due.collectionId)","title":\#(jsonString(due.title)),"organisationName":\#(jsonString(due.org)),"amountPerPersonMinor":\#(due.amount),"dueAt":\#(jsonDate(due.dueAt)),"collectionStatus":"OPEN","status":"\#(paidAt == nil ? "UNPAID" : "PAID")","paidAt":\#(jsonDate(paidAt)),"link":"https://quid.example/c/\#(due.collectionId)"}"#
+        }
+    }
+
+    /// POST /payments { collectionId }: Sam pays his share of a collection he is on, once.
+    static func payCollectionDue(_ body: PayCollectionBody) -> MockResponse {
+        guard let due = dueFixtures(now: Date()).first(where: { $0.collectionId == body.collectionId }) else { return collectionNotFound }
+        if due.paidAt != nil || duePayment(due.collectionId) != nil {
+            return .json(#"{"error":"already_paid","message":"You've already paid this collection."}"#, status: 409)
+        }
+        guard body.amountMinor == due.amount else {
+            return .json(#"{"error":"collection_amount_mismatch","message":"This collection is \#(Money(minor: due.amount).formatted()) each."}"#, status: 400)
+        }
+        let created = MockCreatedPayment(
+            id: "p_m\(state.createdPayments.count + 1)",
+            payeeUserId: "",
+            payeeName: due.org,
+            amountMinor: due.amount,
+            reference: String(due.title.prefix(18)),
+            createdAt: Date(),
+            collectionId: due.collectionId
+        )
+        state.createdPayments.append(created)
+        // Sam has never paid Flat 4B before, so the bank-held name is shown on the first-time sheet.
+        let organisation = MockPerson(userId: "", name: due.org, phone: "", bankName: "Starling")
+        return createdPaymentResponse(created, person: organisation, paidBefore: false, payeeIsOrganisation: true)
     }
 
     // MARK: - Helpers

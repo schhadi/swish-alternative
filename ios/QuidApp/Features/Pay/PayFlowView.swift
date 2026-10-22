@@ -8,8 +8,8 @@ struct PayFlowView: View {
     @State private var picker: ContactPickerViewModel
     let onFinished: () async -> Void
 
-    init(environment: AppEnvironment, target: PayTarget?, request: PaymentRequestDTO? = nil, onFinished: @escaping () async -> Void) {
-        _viewModel = State(initialValue: PayViewModel(environment: environment, target: target, request: request))
+    init(environment: AppEnvironment, target: PayTarget?, request: PaymentRequestDTO? = nil, collectionDue: CollectionDueDTO? = nil, onFinished: @escaping () async -> Void) {
+        _viewModel = State(initialValue: PayViewModel(environment: environment, target: target, request: request, collectionDue: collectionDue))
         _picker = State(initialValue: ContactPickerViewModel(contactSource: environment.contactSource, api: environment.api))
         self.onFinished = onFinished
     }

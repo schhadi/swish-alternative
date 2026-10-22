@@ -18,6 +18,8 @@ struct AmountEntryView: View {
                     }
                     if viewModel.isPayingRequest {
                         requestDetails
+                    } else if viewModel.isPayingCollection {
+                        collectionDetails
                     } else {
                         quickAmounts
                         referenceField
@@ -29,7 +31,7 @@ struct AmountEntryView: View {
                 .padding(.bottom, 12)
             }
             .scrollDismissesKeyboard(.interactively)
-            if !referenceFocused && !viewModel.isPayingRequest {
+            if !referenceFocused && !viewModel.isFixedAmount {
                 AmountKeypad { key in viewModel.press(key) }
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
@@ -49,7 +51,7 @@ struct AmountEntryView: View {
             .padding(.bottom, 8)
             .background(Color.quidBackground)
         }
-        .navigationTitle(viewModel.isPayingRequest ? "Pay request" : "Pay")
+        .navigationTitle(viewModel.isPayingRequest ? "Pay request" : viewModel.isPayingCollection ? "Pay collection" : "Pay")
         .navigationBarTitleDisplayMode(.inline)
         .animation(.easeOut(duration: 0.2), value: referenceFocused)
         .onChange(of: viewModel.inlineMessage) {
@@ -66,7 +68,11 @@ struct AmountEntryView: View {
                     Text("To \(target.displayName)")
                         .font(.quidHeadline)
                         .foregroundStyle(Color.quidInk)
-                    if let request = viewModel.request {
+                    if let due = viewModel.collectionDue {
+                        Text("Collecting \(Money(minor: due.amountPerPersonMinor).formatted()) each")
+                            .font(.quidFootnote)
+                            .foregroundStyle(Color.quidMuted)
+                    } else if let request = viewModel.request {
                         Text("Asked you for \(Money(minor: request.amountMinor).formatted())")
                             .font(.quidFootnote)
                             .foregroundStyle(Color.quidMuted)
@@ -149,6 +155,25 @@ struct AmountEntryView: View {
                 }
             }
             .accessibilityIdentifier("pay.requestDetails")
+        }
+    }
+
+    /// Paying a collection share: what it is for and when it is due, neither of which can be changed here.
+    @ViewBuilder
+    private var collectionDetails: some View {
+        if let due = viewModel.collectionDue {
+            QuidCard(padding: 0) {
+                VStack(spacing: 0) {
+                    DetailRow(label: "For", value: due.title)
+                    QuidDivider().padding(.leading, 16)
+                    DetailRow(label: "Reference", value: viewModel.reference)
+                    if let dueAt = due.dueAt {
+                        QuidDivider().padding(.leading, 16)
+                        DetailRow(label: "Due", value: dueAt.formatted(.dateTime.day().month(.abbreviated)))
+                    }
+                }
+            }
+            .accessibilityIdentifier("pay.collectionDetails")
         }
     }
 

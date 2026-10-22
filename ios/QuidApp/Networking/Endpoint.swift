@@ -164,6 +164,34 @@ enum API {
     static func invite() -> Endpoint<InviteDTO> {
         Endpoint(method: .get, path: "/me/invite")
     }
+
+    // MARK: Phase 4
+
+    static func createOrganisation(_ body: CreateOrganisationRequest) -> Endpoint<CreateOrganisationResponseDTO> {
+        Endpoint(method: .post, path: "/orgs", body: body)
+    }
+
+    static func createCollection(orgId: String, _ body: CreateCollectionRequest) -> Endpoint<CollectionDetailDTO> {
+        Endpoint(method: .post, path: "/orgs/\(orgId)/collections", body: body)
+    }
+
+    /// Everyone unpaid on Quid, or only the members named.
+    static func remindCollection(id: String, memberIds: [String]? = nil) -> Endpoint<CollectionReminderResultDTO> {
+        Endpoint(method: .post, path: "/collections/\(id)/remind", body: RemindCollectionRequest(memberIds: memberIds))
+    }
+
+    static func closeCollection(id: String) -> Endpoint<CollectionDetailDTO> {
+        Endpoint(method: .post, path: "/collections/\(id)/close")
+    }
+
+    static func collectionsDue() -> Endpoint<CollectionDueListDTO> {
+        Endpoint(method: .get, path: "/collections/due")
+    }
+
+    /// Paying one's share of a collection: the server takes the amount and reference from the collection.
+    static func payCollection(_ body: PayCollectionBody) -> Endpoint<PaymentCreateResponseDTO> {
+        Endpoint(method: .post, path: "/payments", body: body)
+    }
 }
 
 // MARK: - Request bodies
@@ -207,6 +235,35 @@ struct CreateSplitRequest: Codable, Equatable, Sendable {
 
 struct RemindSplitRequest: Codable, Sendable {
     let requestIds: [String]?
+}
+
+struct CreateOrganisationRequest: Codable, Equatable, Sendable {
+    let name: String
+    let kind: OrgKind
+    let bankAccount: BankAccountRequest
+}
+
+struct CreateCollectionRequest: Codable, Equatable, Sendable {
+    struct Member: Codable, Equatable, Sendable {
+        /// Someone on Quid; the server names them as Quid knows them.
+        let userId: String?
+        /// Someone added by name only.
+        let displayName: String?
+    }
+
+    let title: String
+    let amountPerPersonMinor: Int
+    let dueAt: Date?
+    let members: [Member]
+}
+
+struct RemindCollectionRequest: Codable, Sendable {
+    let memberIds: [String]?
+}
+
+struct PayCollectionBody: Codable, Equatable, Sendable {
+    let collectionId: String
+    let amountMinor: Int
 }
 
 struct BankAccountRequest: Codable, Equatable, Sendable {

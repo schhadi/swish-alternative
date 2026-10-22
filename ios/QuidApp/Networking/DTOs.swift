@@ -175,11 +175,13 @@ struct InviteDTO: Codable, Hashable, Sendable {
     let message: String
 }
 
-enum OrgKind: String, Codable, Sendable {
+enum OrgKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case society = "SOCIETY"
     case club = "CLUB"
     case flat = "FLAT"
     case other = "OTHER"
+
+    var id: String { rawValue }
 }
 
 enum OrgRole: String, Codable, Sendable {
@@ -202,6 +204,8 @@ struct CollectionSummaryDTO: Codable, Hashable, Identifiable, Sendable {
     let status: CollectionStatus
     let memberCount: Int
     let paidCount: Int
+    /// https://<domain>/c/<slug>: the public pay page, also what the QR code encodes.
+    let link: String?
 }
 
 struct OrganisationDTO: Codable, Hashable, Identifiable, Sendable {
@@ -209,6 +213,8 @@ struct OrganisationDTO: Codable, Hashable, Identifiable, Sendable {
     let name: String
     let kind: OrgKind
     let role: OrgRole
+    /// The bank the organisation collects into. Never account identifiers.
+    let bankName: String?
     let collections: [CollectionSummaryDTO]
 }
 
@@ -227,12 +233,58 @@ struct CollectionMemberDTO: Codable, Hashable, Identifiable, Sendable {
     let status: MemberStatus
     let paidAt: Date?
     let remindCount: Int
+    let lastRemindedAt: Date?
+    /// When the treasurer may remind again; nil means now.
+    let nextReminderAt: Date?
+    /// False for people added by name only: they can pay from the link but can't be reminded.
+    let isOnQuid: Bool?
 }
 
 struct CollectionDetailDTO: Codable, Hashable, Sendable {
     let collection: CollectionSummaryDTO
     let organisationName: String
     let members: [CollectionMemberDTO]
+}
+
+/// Result of POST /orgs. Only MATCH creates the organisation.
+struct CreateOrganisationResponseDTO: Codable, Sendable {
+    let copStatus: CopStatus
+    let suggestedAccountHolderName: String?
+    let organisation: OrganisationDTO?
+}
+
+/// A collection the user is on the list of (GET /collections/due).
+struct CollectionDueDTO: Codable, Hashable, Identifiable, Sendable {
+    let memberId: String
+    let collectionId: String
+    let title: String
+    let organisationName: String
+    let amountPerPersonMinor: Int
+    let dueAt: Date?
+    let collectionStatus: CollectionStatus
+    let status: MemberStatus
+    let paidAt: Date?
+    let link: String
+
+    var id: String { memberId }
+    var isPayable: Bool { status == .unpaid && collectionStatus == .open }
+}
+
+struct CollectionDueListDTO: Codable, Sendable {
+    let collections: [CollectionDueDTO]
+}
+
+struct SkippedMemberReminderDTO: Codable, Hashable, Sendable {
+    let memberId: String
+    /// "too_soon", "paid" or "not_on_quid".
+    let reason: String
+    let nextReminderAt: Date?
+}
+
+struct CollectionReminderResultDTO: Codable, Sendable {
+    let reminded: [String]
+    let skipped: [SkippedMemberReminderDTO]
+    let detail: CollectionDetailDTO
 }
 
 struct HealthDTO: Codable, Sendable {
@@ -299,7 +351,8 @@ struct RegisteredContactDTO: Codable, Hashable, Sendable {
 
 /// Who is being paid, as the server confirmed it with their bank. Returned by POST /payments only.
 struct PayeeDTO: Codable, Hashable, Sendable {
-    let userId: String
+    /// Nil when the payee is an organisation (a collection).
+    let userId: String?
     let displayName: String
     /// The name their bank holds; present only for a first-time payee, for the warning sheet.
     let accountHolderName: String?

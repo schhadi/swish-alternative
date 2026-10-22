@@ -1,6 +1,6 @@
 import XCTest
 
-/// Launch, onboarding, pay, request and pay-a-request journeys against MockMode.
+/// Launch, onboarding, pay, request, pay-a-request and create-a-collection journeys against MockMode.
 final class QuidAppUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -142,6 +142,44 @@ final class QuidAppUITests: XCTestCase {
         waitFor(app.buttons["home.request"], in: app, timeout: 10)
         waitForAbsence(app.buttons["home.request.pay.req_301"])
         XCTAssertTrue(app.buttons["home.request.pay.req_302"].exists, "Tom's request is still open")
+    }
+
+    @MainActor
+    func testCreatingACollectionAndShowingItsQRCode() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-mock"]
+        app.launch()
+
+        let collect = app.tabBars.buttons["Collect"]
+        waitFor(collect, in: app, timeout: 20)
+        collect.tap()
+        let newCollection = app.buttons["collect.newCollection.org_hockey"]
+        waitFor(newCollection, in: app, timeout: 10)
+        newCollection.tap()
+
+        let title = app.textFields["collection.title"]
+        waitFor(title, in: app, timeout: 10)
+        focus(title)
+        title.typeText("Kit deposit")
+        let amount = app.textFields["collection.amount"]
+        focus(amount)
+        amount.typeText("25")
+        let name = app.textFields["collection.newName"]
+        focus(name)
+        name.typeText("Jamie Lee")
+        app.buttons["collection.addName"].tap()
+
+        let create = app.buttons["collection.create"]
+        XCTAssertTrue(create.isEnabled)
+        create.tap()
+
+        // The new collection's treasurer view: created banner, Jamie on the list, the link's QR code.
+        waitFor(app.descendants(matching: .any)["collection.created"], in: app, timeout: 10)
+        XCTAssertTrue(app.descendants(matching: .any)["collection.member.cm1_1"].waitForExistence(timeout: 5))
+        app.buttons["collection.showQR"].tap()
+        waitFor(app.descendants(matching: .any)["collection.qr"], in: app, timeout: 10)
+        app.buttons["collection.qr.done"].tap()
+        waitFor(app.buttons["collection.showQR"], in: app, timeout: 10)
     }
 
     @MainActor

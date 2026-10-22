@@ -25,7 +25,7 @@ struct HomeView: View {
                         linkBankPrompt
                     }
                     actionButtons
-                    if !viewModel.incomingRequests.isEmpty {
+                    if !viewModel.incomingRequests.isEmpty || !viewModel.collectionDues.isEmpty {
                         incomingRequestsSection
                     }
                     recentContactsSection
@@ -49,7 +49,7 @@ struct HomeView: View {
                 .environment(appEnvironment)
         }
         .fullScreenCover(item: $payPresentation) { presentation in
-            PayFlowView(environment: appEnvironment, target: presentation.target, request: presentation.request) { await viewModel.load() }
+            PayFlowView(environment: appEnvironment, target: presentation.target, request: presentation.request, collectionDue: presentation.collectionDue) { await viewModel.load() }
                 .environment(appEnvironment)
         }
         .fullScreenCover(isPresented: $showRequestFlow) {
@@ -75,12 +75,14 @@ struct HomeView: View {
         case pick
         case target(PayTarget)
         case request(PaymentRequestDTO)
+        case collection(CollectionDueDTO)
 
         var id: String {
             switch self {
             case .pick: return "pick"
             case .target(let target): return target.userId
             case .request(let request): return "request-\(request.id)"
+            case .collection(let due): return "collection-\(due.memberId)"
             }
         }
 
@@ -91,6 +93,11 @@ struct HomeView: View {
 
         var request: PaymentRequestDTO? {
             if case .request(let request) = self { return request }
+            return nil
+        }
+
+        var collectionDue: CollectionDueDTO? {
+            if case .collection(let due) = self { return due }
             return nil
         }
     }
@@ -208,6 +215,11 @@ struct HomeView: View {
                     onPay: { payPresentation = .request(request) },
                     onDecline: { declining = request }
                 )
+            }
+            ForEach(viewModel.collectionDues) { due in
+                CollectionDueCard(due: due) {
+                    payPresentation = .collection(due)
+                }
             }
             if let message = viewModel.requestError {
                 QuidErrorLine(message: message)
@@ -363,6 +375,45 @@ struct IncomingRequestCard: View {
             parts.append(note)
         }
         parts.append("Expires \(request.expiresAt.formatted(.dateTime.day().month(.abbreviated)))")
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// A collection the user is on the list of and hasn't paid: who is collecting, for what, by when, and Pay.
+struct CollectionDueCard: View {
+    let due: CollectionDueDTO
+    let onPay: () -> Void
+
+    var body: some View {
+        QuidCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 12) {
+                    Avatar(name: due.organisationName, size: 44)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("\(due.organisationName) is collecting \(Money(minor: due.amountPerPersonMinor).formatted())")
+                            .font(.quidHeadline)
+                            .foregroundStyle(Color.quidInk)
+                        Text(subtitle)
+                            .font(.quidFootnote)
+                            .foregroundStyle(Color.quidMuted)
+                    }
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 10) {
+                    QuidPillButton(title: "Pay \(Money(minor: due.amountPerPersonMinor).formatted(compact: true))", action: onPay)
+                        .accessibilityLabel("Pay \(due.organisationName) \(Money(minor: due.amountPerPersonMinor).formatted()) for \(due.title)")
+                        .accessibilityIdentifier("home.collection.pay.\(due.collectionId)")
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    private var subtitle: String {
+        var parts = [due.title]
+        if let dueAt = due.dueAt {
+            parts.append(dueAt.quidDueDescription)
+        }
         return parts.joined(separator: " · ")
     }
 }

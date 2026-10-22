@@ -116,7 +116,10 @@ final class ViewModelTests: XCTestCase {
     func testCollectLoadsOrganisationsAndDetail() async {
         let viewModel = CollectViewModel(api: mockClient())
         await viewModel.load()
-        XCTAssertEqual(viewModel.organisations.count, 2)
+        XCTAssertEqual(viewModel.organisations.map(\.name), ["SOAS Hockey Club"])
+        XCTAssertEqual(viewModel.treasurerOrganisations.count, 1)
+        XCTAssertEqual(viewModel.dues.map(\.organisationName), ["Flat 4B", "SOAS Climbing Society"])
+        XCTAssertEqual(viewModel.dues.filter(\.isPayable).map(\.title), ["October bills"])
         guard let collection = viewModel.organisations.first?.collections.first else {
             return XCTFail("Expected a collection")
         }

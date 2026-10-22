@@ -151,9 +151,10 @@ struct RequestAmountView: View {
                                 Text("£")
                                     .font(.quidHeadline)
                                     .foregroundStyle(Color.quidMuted)
-                                PersonAmountField(initialText: viewModel.amountText(for: person.userId)) { cleaned in
+                                AmountTextField(initialText: viewModel.amountText(for: person.userId)) { cleaned in
                                     viewModel.setAmountText(cleaned, for: person.userId)
                                 }
+                                .frame(minWidth: 72, maxWidth: 110)
                                 .focused($focus, equals: .person(person.userId))
                                 .accessibilityLabel("Amount for \(person.displayName)")
                                 .accessibilityIdentifier("request.amount.\(person.userId)")
@@ -198,24 +199,27 @@ struct RequestAmountView: View {
     }
 }
 
-/// One person's amount. The field owns its text and rewrites it to the cleaned value as you type, so it can never
-/// show more than two decimals or anything that is not a number (a binding that only rejects input would leave the
-/// rejected characters on screen).
-private struct PersonAmountField: View {
+/// An amount typed with the decimal pad. The field owns its text and rewrites it to the cleaned value as you type,
+/// so it can never show more than two decimals or anything that is not a number (a binding that only rejects input
+/// would leave the rejected characters on screen). Used per person in a split and for a collection's amount.
+struct AmountTextField: View {
     @State private var text: String
+    let placeholder: String
+    let alignment: TextAlignment
     let onChange: (String) -> Void
 
-    init(initialText: String, onChange: @escaping (String) -> Void) {
+    init(initialText: String, placeholder: String = "0.00", alignment: TextAlignment = .trailing, onChange: @escaping (String) -> Void) {
         _text = State(initialValue: initialText)
+        self.placeholder = placeholder
+        self.alignment = alignment
         self.onChange = onChange
     }
 
     var body: some View {
-        TextField("0.00", text: $text)
+        TextField(placeholder, text: $text)
             .keyboardType(.decimalPad)
-            .multilineTextAlignment(.trailing)
+            .multilineTextAlignment(alignment)
             .font(.quidHeadline)
-            .frame(minWidth: 72, maxWidth: 110)
             .onChange(of: text) {
                 let cleaned = PayViewModel.sanitisedAmount(text)
                 if cleaned != text {

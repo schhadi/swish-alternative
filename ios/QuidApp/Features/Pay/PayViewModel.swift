@@ -21,6 +21,8 @@ final class PayViewModel {
     let rootIsPicker: Bool
     /// Paying a request someone sent: the person, amount and reference come from it and cannot be changed.
     let request: PaymentRequestDTO?
+    /// Paying one's share of a collection: the organisation, amount and reference are fixed the same way.
+    let collectionDue: CollectionDueDTO?
     var path: [Step] = []
     private(set) var target: PayTarget?
 
@@ -56,11 +58,17 @@ final class PayViewModel {
     private let authoriser: any PaymentAuthoriser
     private var pollTask: Task<Void, Never>?
 
-    init(environment: AppEnvironment, target: PayTarget?, request: PaymentRequestDTO? = nil, authoriser: (any PaymentAuthoriser)? = nil) {
+    init(environment: AppEnvironment, target: PayTarget?, request: PaymentRequestDTO? = nil, collectionDue: CollectionDueDTO? = nil, authoriser: (any PaymentAuthoriser)? = nil) {
         self.environment = environment
         self.authoriser = authoriser ?? environment.paymentAuthoriser
         self.request = request
-        if let request {
+        self.collectionDue = collectionDue
+        if let collectionDue {
+            self.target = PayTarget(userId: "collection-\(collectionDue.collectionId)", displayName: collectionDue.organisationName)
+            rootIsPicker = false
+            amountText = PayViewModel.text(fromMinor: collectionDue.amountPerPersonMinor)
+            reference = PayViewModel.cleanReference(collectionDue.title)
+        } else if let request {
             self.target = PayTarget(userId: request.requesterUserId, displayName: request.requester.displayName)
             rootIsPicker = false
             amountText = PayViewModel.text(fromMinor: request.amountMinor)
@@ -73,6 +81,9 @@ final class PayViewModel {
     }
 
     var isPayingRequest: Bool { request != nil }
+    var isPayingCollection: Bool { collectionDue != nil }
+    /// A request or a collection share: the amount and reference can't be changed.
+    var isFixedAmount: Bool { request != nil || collectionDue != nil }
 
     // MARK: - Derived
 
@@ -157,7 +168,7 @@ final class PayViewModel {
     /// "Split this with others" after paying: the amount as the bill (the user paid it, so their own share is in it)
     /// and the reference as the title unless it is the default "From <name>". Not offered for a paid request.
     var splitPrefill: RequestPrefill? {
-        guard request == nil, let payment else { return nil }
+        guard !isFixedAmount, let payment else { return nil }
         let isDefault = payment.reference == PayViewModel.defaultReference(for: environment.profile?.user.displayName)
         return RequestPrefill(totalMinor: payment.amountMinor, title: isDefault ? "" : payment.reference, includeMe: true)
     }
@@ -173,14 +184,14 @@ final class PayViewModel {
     }
 
     func press(_ key: KeypadKey) {
-        // A request fixes the amount.
-        guard request == nil else { return }
+        // A request or a collection fixes the amount.
+        guard !isFixedAmount else { return }
         error = nil
         amountText = PayViewModel.applying(key, to: amountText)
     }
 
     func setQuickAmount(_ minor: Int) {
-        guard request == nil else { return }
+        guard !isFixedAmount else { return }
         error = nil
         amountText = PayViewModel.text(fromMinor: minor)
     }
@@ -193,7 +204,9 @@ final class PayViewModel {
         defer { isSubmitting = false }
         do {
             let endpoint: Endpoint<PaymentCreateResponseDTO>
-            if let request {
+            if let collectionDue {
+                endpoint = API.payCollection(PayCollectionBody(collectionId: collectionDue.collectionId, amountMinor: collectionDue.amountPerPersonMinor))
+            } else if let request {
                 endpoint = API.payRequest(PayRequestBody(requestId: request.id, amountMinor: request.amountMinor))
             } else {
                 endpoint = API.createPayment(CreatePaymentRequest(payeeUserId: target.userId, amountMinor: amountMinor, reference: reference.trimmingCharacters(in: .whitespaces)))
