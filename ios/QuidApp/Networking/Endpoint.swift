@@ -123,12 +123,13 @@ enum API {
         Endpoint(method: .post, path: "/payments", body: body)
     }
 
-    static func requests(role: RequestRole, pendingOnly: Bool = false) -> Endpoint<RequestListDTO> {
-        Endpoint(
-            method: .get,
-            path: "/requests",
-            query: [URLQueryItem(name: "role", value: role.rawValue), URLQueryItem(name: "status", value: pendingOnly ? "pending" : "all")]
-        )
+    /// `splitId` narrows the list to one split, which is how a split link finds the viewer's own request.
+    static func requests(role: RequestRole, pendingOnly: Bool = false, splitId: String? = nil) -> Endpoint<RequestListDTO> {
+        var query = [URLQueryItem(name: "role", value: role.rawValue), URLQueryItem(name: "status", value: pendingOnly ? "pending" : "all")]
+        if let splitId {
+            query.append(URLQueryItem(name: "splitId", value: splitId))
+        }
+        return Endpoint(method: .get, path: "/requests", query: query)
     }
 
     static func request(id: String) -> Endpoint<PaymentRequestDTO> {

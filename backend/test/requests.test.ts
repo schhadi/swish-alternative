@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "../src/lib/db.js";
 import { LIMITS } from "../src/limits.js";
+import { pollInFlightPayments } from "../src/services/payments/poller.js";
 import { applyTransition } from "../src/services/payments/stateMachine.js";
 import { expireStaleRequests } from "../src/services/requests/service.js";
 import { bearer, createTestApp, registerUser, resetDatabase, silentLog, type TestContext } from "./helpers.js";
@@ -225,6 +226,17 @@ describe("payment requests", () => {
       expect(outcome).toMatchObject({ applied: false, reason: "duplicate" });
       expect((await prisma.paymentRequest.findUniqueOrThrow({ where: { id: request.id } })).status).toBe("PAID");
     });
+  });
+
+  it("settles a request on the next poll when its payment executed but the request write was lost", async () => {
+    const request = await samAsksPriya();
+    const created = (await post(priya.token, "/payments", { requestId: request.id })).json();
+    // The fallback poll moved the payment on, then the process died before the request was written.
+    await prisma.payment.update({ where: { id: created.paymentId }, data: { status: "EXECUTED" } });
+    const result = await pollInFlightPayments(ctx.provider, silentLog);
+    expect(result.requestsSettled).toBe(1);
+    expect((await prisma.paymentRequest.findUniqueOrThrow({ where: { id: request.id } })).status).toBe("PAID");
+    expect((await pollInFlightPayments(ctx.provider, silentLog)).requestsSettled).toBe(0);
   });
 
   it("closes open requests in both directions when an account is deleted", async () => {

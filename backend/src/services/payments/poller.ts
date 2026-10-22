@@ -1,6 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import { prisma } from "../../lib/db.js";
 import { LIMITS } from "../../limits.js";
+import { settleMissedRequests } from "../requests/settle.js";
 import { toPaymentStatus, type PaymentProvider } from "./provider.js";
 import { applyTransition, type TransitionSource } from "./stateMachine.js";
 
@@ -9,8 +10,9 @@ import { applyTransition, type TransitionSource } from "./stateMachine.js";
  * about two minutes after its last change, then once per poll interval until it is terminal. Webhooks remain the
  * source of truth; the poll only catches up.
  */
-export async function pollInFlightPayments(provider: PaymentProvider, log: FastifyBaseLogger, now: Date = new Date()): Promise<{ checked: number; changed: number; abandoned: number }> {
+export async function pollInFlightPayments(provider: PaymentProvider, log: FastifyBaseLogger, now: Date = new Date()): Promise<{ checked: number; changed: number; abandoned: number; requestsSettled: number }> {
   const abandoned = await failAbandonedCreations(log, now);
+  const requestsSettled = await settleMissedRequests(log, now);
   const stuckSince = new Date(now.getTime() - LIMITS.authorizingPollAfterMinutes * 60_000);
   const polledBefore = new Date(now.getTime() - LIMITS.pollIntervalSeconds * 1000);
   const candidates = await prisma.payment.findMany({
@@ -29,7 +31,7 @@ export async function pollInFlightPayments(provider: PaymentProvider, log: Fasti
     const outcome = await reconcilePayment(candidate.id, candidate.tlPaymentId, provider, "poll", log, now);
     if (outcome) changed += 1;
   }
-  return { checked: candidates.length, changed, abandoned };
+  return { checked: candidates.length, changed, abandoned, requestsSettled };
 }
 
 /**

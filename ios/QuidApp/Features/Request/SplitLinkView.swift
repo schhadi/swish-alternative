@@ -40,7 +40,7 @@ final class SplitLinkViewModel {
             return
         }
         do {
-            let incoming = try await api.send(API.requests(role: .incoming))
+            let incoming = try await api.send(API.requests(role: .incoming, splitId: splitId))
             if let request = incoming.requests.first(where: { $0.splitId == splitId }) {
                 state = .forMe(request)
             } else {

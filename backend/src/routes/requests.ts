@@ -18,6 +18,8 @@ import {
 const ListQuery = z.object({
   role: z.enum(["incoming", "outgoing"]).default("incoming"),
   status: z.enum(["pending", "all"]).default("all"),
+  /** Only the requests in this split: how a split link finds the viewer's own share however old it is. */
+  splitId: z.string().min(1).max(64).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
@@ -54,12 +56,13 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
   /** incoming = addressed to me (Home shows the pending ones); outgoing = mine to others. Newest first. */
   app.get("/requests", { preHandler: requireAuth }, async (request) => {
     const { id: userId } = currentUser(request);
-    const { role, status, limit } = ListQuery.parse(request.query);
+    const { role, status, splitId, limit } = ListQuery.parse(request.query);
     const now = new Date();
     const rows = await prisma.paymentRequest.findMany({
       where: {
         ...(role === "incoming" ? { payerUserId: userId } : { requesterUserId: userId }),
         ...(status === "pending" ? { status: "PENDING", expiresAt: { gt: now } } : {}),
+        ...(splitId ? { splitShare: { splitId } } : {}),
       },
       orderBy: { createdAt: "desc" },
       take: limit,

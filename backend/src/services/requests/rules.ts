@@ -63,12 +63,21 @@ export function assertRequestAmount(amountMinor: number): void {
   }
 }
 
+const graphemes = new Intl.Segmenter("en-GB", { granularity: "grapheme" });
+
+/** Characters as people see them: one per emoji or flag, the same count the app's field shows. */
+export function visibleLength(text: string): number {
+  let count = 0;
+  for (const _ of graphemes.segment(text)) count += 1;
+  return count;
+}
+
 export function normaliseTitle(raw: string): string {
   const tidy = raw.trim().replace(/\s+/g, " ");
   if (tidy.length === 0) {
     throw new HttpError(400, "invalid_title", "Give it a title, like “Pizza night”.");
   }
-  if (tidy.length > LIMITS.requestTitleMaxLength) {
+  if (visibleLength(tidy) > LIMITS.requestTitleMaxLength) {
     throw new HttpError(400, "invalid_title", `Keep the title to ${LIMITS.requestTitleMaxLength} characters.`);
   }
   return tidy;
@@ -78,7 +87,7 @@ export function normaliseNote(raw: string | null | undefined): string | null {
   if (raw === null || raw === undefined) return null;
   const tidy = raw.trim().replace(/\s+/g, " ");
   if (tidy.length === 0) return null;
-  if (tidy.length > LIMITS.requestNoteMaxLength) {
+  if (visibleLength(tidy) > LIMITS.requestNoteMaxLength) {
     throw new HttpError(400, "invalid_note", `Keep the note to ${LIMITS.requestNoteMaxLength} characters.`);
   }
   return tidy;

@@ -106,10 +106,10 @@ final class RequestFlowTests: XCTestCase {
         viewModel.toggle(contact("u_priya", "Priya Patel"))
         viewModel.toggle(contact("u_tom", "Tom Whitfield"))
         viewModel.mode = .custom
+        viewModel.title = "Taxi"
         viewModel.setAmountText("12.5", for: "u_priya")
         XCTAssertFalse(viewModel.canSubmit, "Tom has no amount yet")
         viewModel.setAmountText("7.25", for: "u_tom")
-        viewModel.title = "Taxi"
         XCTAssertEqual(viewModel.shareAmounts, [1250, 725])
         XCTAssertEqual(viewModel.totalMinor, 1975)
         XCTAssertEqual(viewModel.myShareMinor, 0)
@@ -128,6 +128,14 @@ final class RequestFlowTests: XCTestCase {
         viewModel.includeMe = true
         XCTAssertNil(viewModel.amountProblem, "£300 split with me is £150 each")
         XCTAssertTrue(viewModel.canSubmit)
+    }
+
+    func testTitlesWithQuotesSurviveTheMockServer() async throws {
+        let environment = await environment()
+        let split = try await environment.api.send(API.createSplit(CreateSplitRequest(title: #"Dinner at "Luigi's" \ 2"#, totalMinor: 2000, shares: [.init(userId: "u_tom", amountMinor: 1000)])))
+        XCTAssertEqual(split.title, #"Dinner at "Luigi's" \ 2"#)
+        let list = try await environment.api.send(API.splits())
+        XCTAssertTrue(list.splits.contains { $0.id == split.id })
     }
 
     func testTitleIsCappedAndPrefillComesFromAPayment() async {

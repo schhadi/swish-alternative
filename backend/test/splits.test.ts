@@ -91,6 +91,26 @@ describe("splits", () => {
     expect(referenceFromTitle("李明的生日")).toBe("Quid split");
   });
 
+  it("counts the title in characters as people see them, emoji and flags included", async () => {
+    const forty = "a".repeat(36) + "🍕🇬🇧👩‍👩‍👧🎉";
+    const accepted = await split(sam.token, { title: forty, totalMinor: 1000, shares: [{ userId: priya.userId, amountMinor: 1000 }] });
+    expect(accepted.statusCode).toBe(201);
+    const refused = await split(sam.token, { title: forty + "!", totalMinor: 1000, shares: [{ userId: priya.userId, amountMinor: 1000 }] });
+    expect(refused.json().error).toBe("invalid_title");
+  });
+
+  it("finds the viewer's own request in a split however many requests they have", async () => {
+    const body = await dinner();
+    for (let index = 0; index < 3; index += 1) {
+      await split(sam.token, { title: `Other ${index}`, totalMinor: 500, shares: [{ userId: priya.userId, amountMinor: 500 }] });
+    }
+    const filtered = (await get(priya.token, `/requests?role=incoming&splitId=${body.id}&limit=1`)).json().requests;
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]).toMatchObject({ splitId: body.id, amountMinor: 2000 });
+    expect((await get(tom.token, `/requests?role=incoming&splitId=${body.id}`)).json().requests[0].payerUserId).toBe(tom.userId);
+    expect((await get(sam.token, `/requests?role=incoming&splitId=${body.id}`)).json().requests).toEqual([]);
+  });
+
   it("validates the split before writing anything", async () => {
     const share = (userId: string, amountMinor = 1000) => ({ userId, amountMinor });
     const cases: [Record<string, unknown>, string][] = [

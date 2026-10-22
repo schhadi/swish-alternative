@@ -195,8 +195,10 @@ enum MockFixtures {
                     let rows = allSplits().flatMap { split in split.shares.map { outgoingRequestJSON($0, split: split) } }
                     return .json(#"{"requests":[\#(rows.joined(separator: ","))]}"#)
                 }
+                let splitId = URLComponents(string: "?" + (request.query ?? ""))?.queryItems?.first(where: { $0.name == "splitId" })?.value
                 let rows = incomingFixtures
                     .filter { !pendingOnly || incomingStatus($0) == "PENDING" }
+                    .filter { splitId == nil || $0.splitId == splitId }
                     .map(incomingRequestJSON)
                 return .json(#"{"requests":[\#(rows.joined(separator: ","))]}"#)
             },
@@ -563,7 +565,7 @@ enum MockFixtures {
           "expiresAt": "\(ISO8601.string(from: request.expiresAt))",
           "createdAt": "\(ISO8601.string(from: request.createdAt))",
           "requester": {"userId":"\(request.requesterId)","displayName":"\(request.requesterName)"},
-          "payer": {"userId":"\(meUserId)","displayName":"\(state.displayName)"},
+          "payer": {"userId":"\(meUserId)","displayName":\(jsonString(state.displayName))},
           "splitId": \(jsonString(request.splitId)),
           "splitTitle": \(jsonString(request.splitTitle)),
           "paidAt": \(status == "PAID" ? jsonDate(paidAt) : "null"),
@@ -700,7 +702,7 @@ enum MockFixtures {
         return """
         {
           "id": "\(split.id)",
-          "title": "\(split.title)",
+          "title": \(jsonString(split.title)),
           "totalMinor": \(split.totalMinor),
           "createdAt": "\(ISO8601.string(from: split.createdAt))",
           "creatorShareMinor": \(max(0, split.totalMinor - requested)),
@@ -724,16 +726,16 @@ enum MockFixtures {
           "requesterUserId": "\(meUserId)",
           "payerUserId": "\(share.userId)",
           "amountMinor": \(share.amountMinor),
-          "reference": "\(String(split.title.prefix(18)))",
+          "reference": \(jsonString(String(split.title.prefix(18)))),
           "note": null,
           "status": "\(share.status)",
           "paymentId": null,
           "expiresAt": "\(ISO8601.string(from: split.createdAt.addingTimeInterval(14 * 86400)))",
           "createdAt": "\(ISO8601.string(from: split.createdAt))",
-          "requester": {"userId":"\(meUserId)","displayName":"\(state.displayName)"},
+          "requester": {"userId":"\(meUserId)","displayName":\(jsonString(state.displayName))},
           "payer": {"userId":"\(share.userId)","displayName":"\(share.name)"},
           "splitId": "\(split.id)",
-          "splitTitle": "\(split.title)",
+          "splitTitle": \(jsonString(split.title)),
           "paidAt": \(jsonDate(share.paidAt)),
           "declinedAt": \(jsonDate(share.declinedAt)),
           "lastRemindedAt": \(jsonDate(share.remindedAt)),
@@ -859,9 +861,13 @@ enum MockFixtures {
 
     // MARK: - Helpers
 
+    /// A JSON string literal (quotes, backslashes and control characters escaped), or null.
     private static func jsonString(_ value: String?) -> String {
         guard let value else { return "null" }
-        return "\"\(value)\""
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        guard let data = try? encoder.encode(value), let literal = String(data: data, encoding: .utf8) else { return "null" }
+        return literal
     }
 
     private static func jsonDate(_ value: Date?) -> String {

@@ -33,11 +33,11 @@ describe("payment polling fallback", () => {
   it("leaves fresh payments alone and catches up ones stuck for two minutes", async () => {
     ctx.provider.advance(tlPaymentId, "executed", null, "ob-monzo");
     const fresh = await pollInFlightPayments(ctx.provider, ctx.app.log);
-    expect(fresh).toEqual({ checked: 0, changed: 0, abandoned: 0 });
+    expect(fresh).toEqual({ checked: 0, changed: 0, abandoned: 0, requestsSettled: 0 });
 
     const later = new Date(Date.now() + 3 * 60_000);
     const stuck = await pollInFlightPayments(ctx.provider, ctx.app.log, later);
-    expect(stuck).toEqual({ checked: 1, changed: 1, abandoned: 0 });
+    expect(stuck).toEqual({ checked: 1, changed: 1, abandoned: 0, requestsSettled: 0 });
     const row = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
     expect(row.status).toBe("EXECUTED");
     expect(row.providerId).toBe("ob-monzo");
@@ -47,20 +47,20 @@ describe("payment polling fallback", () => {
 
   it("does not poll the same payment again within the interval, and stops once it is final", async () => {
     const later = new Date(Date.now() + 3 * 60_000);
-    expect(await pollInFlightPayments(ctx.provider, ctx.app.log, later)).toEqual({ checked: 1, changed: 0, abandoned: 0 });
-    expect(await pollInFlightPayments(ctx.provider, ctx.app.log, later)).toEqual({ checked: 0, changed: 0, abandoned: 0 });
+    expect(await pollInFlightPayments(ctx.provider, ctx.app.log, later)).toEqual({ checked: 1, changed: 0, abandoned: 0, requestsSettled: 0 });
+    expect(await pollInFlightPayments(ctx.provider, ctx.app.log, later)).toEqual({ checked: 0, changed: 0, abandoned: 0, requestsSettled: 0 });
 
     ctx.provider.advance(tlPaymentId, "failed", "user_canceled");
     const muchLater = new Date(later.getTime() + 2 * 60_000);
-    expect(await pollInFlightPayments(ctx.provider, ctx.app.log, muchLater)).toEqual({ checked: 1, changed: 1, abandoned: 0 });
+    expect(await pollInFlightPayments(ctx.provider, ctx.app.log, muchLater)).toEqual({ checked: 1, changed: 1, abandoned: 0, requestsSettled: 0 });
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } })).status).toBe("CANCELLED");
-    expect(await pollInFlightPayments(ctx.provider, ctx.app.log, new Date(muchLater.getTime() + 10 * 60_000))).toEqual({ checked: 0, changed: 0, abandoned: 0 });
+    expect(await pollInFlightPayments(ctx.provider, ctx.app.log, new Date(muchLater.getTime() + 10 * 60_000))).toEqual({ checked: 0, changed: 0, abandoned: 0, requestsSettled: 0 });
   });
 
   it("survives a provider that cannot find the payment", async () => {
     await prisma.payment.update({ where: { id: paymentId }, data: { tlPaymentId: "fake_missing" } });
     const later = new Date(Date.now() + 3 * 60_000);
-    expect(await pollInFlightPayments(ctx.provider, ctx.app.log, later)).toEqual({ checked: 1, changed: 0, abandoned: 0 });
+    expect(await pollInFlightPayments(ctx.provider, ctx.app.log, later)).toEqual({ checked: 1, changed: 0, abandoned: 0, requestsSettled: 0 });
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } })).status).toBe("AUTHORIZING");
   });
 
@@ -76,7 +76,7 @@ describe("payment polling fallback", () => {
     const blocked = await ctx.app.inject({ method: "POST", url: "/payments", headers: bearer(samToken), payload: { payeeUserId: payer.payeeUserId, amountMinor: 24000, reference: "Blocked" } });
     expect(blocked.json().error).toBe("limit_24h");
 
-    expect(await pollInFlightPayments(ctx.provider, ctx.app.log)).toEqual({ checked: 0, changed: 0, abandoned: 1 });
+    expect(await pollInFlightPayments(ctx.provider, ctx.app.log)).toEqual({ checked: 0, changed: 0, abandoned: 1, requestsSettled: 0 });
     const swept = await prisma.payment.findUniqueOrThrow({ where: { id: orphan.id } });
     expect(swept.status).toBe("FAILED");
     expect(swept.failureReason).toBe("abandoned");
