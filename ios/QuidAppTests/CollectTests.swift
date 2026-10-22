@@ -29,7 +29,8 @@ final class CollectTests: XCTestCase {
     }
 
     private func hockeyClub(_ environment: AppEnvironment) async throws -> OrganisationDTO {
-        try XCTUnwrap(try await environment.api.send(API.organisations()).organisations.first { $0.id == "org_hockey" })
+        let organisations = try await environment.api.send(API.organisations()).organisations
+        return try XCTUnwrap(organisations.first { $0.id == "org_hockey" })
     }
 
     // MARK: - Organisations
@@ -116,7 +117,8 @@ final class CollectTests: XCTestCase {
 
     func testRemindingRespectsTheDailyLimitAndExplainsWhoCantBeReached() async throws {
         let environment = await environment()
-        let kit = try XCTUnwrap(try await hockeyClub(environment).collections.first { $0.id == "col_kit" })
+        let club = try await hockeyClub(environment)
+        let kit = try XCTUnwrap(club.collections.first { $0.id == "col_kit" })
         let viewModel = CollectionDetailViewModel(api: environment.api, collection: kit)
         await viewModel.load()
         XCTAssertEqual(viewModel.memberCount, 15)
@@ -138,7 +140,8 @@ final class CollectTests: XCTestCase {
 
     func testClosingStopsRemindersAndTheLink() async throws {
         let environment = await environment()
-        let trip = try XCTUnwrap(try await hockeyClub(environment).collections.first { $0.id == "col_trip" })
+        let club = try await hockeyClub(environment)
+        let trip = try XCTUnwrap(club.collections.first { $0.id == "col_trip" })
         let viewModel = CollectionDetailViewModel(api: environment.api, collection: trip)
         await viewModel.load()
         XCTAssertTrue(viewModel.isOpen)
@@ -147,7 +150,8 @@ final class CollectTests: XCTestCase {
         XCTAssertFalse(viewModel.isOpen)
         XCTAssertEqual(viewModel.notice, "Collection closed. The link no longer takes payments.")
         XCTAssertEqual(viewModel.dueReminderCount, 0)
-        let reloaded = try XCTUnwrap(try await hockeyClub(environment).collections.first { $0.id == "col_trip" })
+        let reloadedClub = try await hockeyClub(environment)
+        let reloaded = try XCTUnwrap(reloadedClub.collections.first { $0.id == "col_trip" })
         XCTAssertEqual(reloaded.status, .closed)
     }
 
@@ -164,7 +168,8 @@ final class CollectTests: XCTestCase {
 
     func testPayingAShareUsesTheCollectionsAmountAndShowsTheFirstTimeWarning() async throws {
         let environment = await environment()
-        let due = try XCTUnwrap(try await environment.api.send(API.collectionsDue()).collections.first { $0.isPayable })
+        let dues = try await environment.api.send(API.collectionsDue()).collections
+        let due = try XCTUnwrap(dues.first { $0.isPayable })
         let authoriser = MockPaymentAuthoriser()
         authoriser.delay = 0
         let viewModel = PayViewModel(environment: environment, target: nil, collectionDue: due, authoriser: authoriser)
