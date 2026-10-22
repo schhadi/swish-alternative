@@ -10,12 +10,12 @@ The full product spec is in [`docs/SPEC.md`](docs/SPEC.md). Work happens phase b
 | --- | --- | --- |
 | 0 | Scaffold: repo layout, backend skeleton + Prisma schema, iOS project + design system + `APIClient` + MockMode, CI, docs | Done, reviewed |
 | 1 | Onboarding + directory: OTP sign-in, name, bank account with Confirmation of Payee, providers, contacts hashing + lookup, real (empty) feeds | Done, reviewed |
-| 2 | Pay end to end: limits, state machine, signed webhooks, polling, SDK authorisation, result screen; works against the built-in fake bank. Sandbox run pending: TrueLayer hosts were unreachable from the build environment (docs/DECISIONS.md #59) | **Done, awaiting review** |
-| 3 | Requests and splits | Not started |
+| 2 | Pay end to end: limits, state machine, signed webhooks, polling, SDK authorisation, result screen; works against the built-in fake bank. Sandbox run pending: TrueLayer hosts were unreachable from the build environment (docs/DECISIONS.md #59) | Done, reviewed |
+| 3 | Requests and splits: split flow (equal or custom), split detail with nudges and a shareable link, incoming requests with Pay / Decline, reminders once per 24h, invite links | **Done, awaiting review** |
 | 4 | Collect | Not started |
 | 5 | Hardening | Not started |
 
-Phase 0 also ships a navigable UI shell (Home · Activity · Collect · Me) running on canned data, so the design system can be reviewed on a simulator. Flows that belong to later phases (Pay, Request, reminders, creating collections, changing bank) open a short "Phase N" sheet instead of doing nothing.
+Phase 0 also ships a navigable UI shell (Home · Activity · Collect · Me) running on canned data, so the design system can be reviewed on a simulator. Flows that still belong to a later phase (creating collections and collection reminders, Phase 4) open a short "Phase N" sheet instead of doing nothing.
 
 ## Repository layout
 
@@ -62,6 +62,8 @@ The visual language is fixed by spec section 8 (Manrope, `#0B6B54` accent, cards
 - Home: greeting as the title, two large actions, a horizontal strip of recent people, then activity in one card (cf. [Apple Wallet's card screen](https://mobbin.com/screens/a0767397-5473-4536-944a-d4d3bdc48958), [Revolut home](https://mobbin.com/screens/5be4e584-20cf-45a5-aade-d505997121b7), [Wise recipients](https://mobbin.com/screens/5a670d64-1353-4c11-8299-13d98a178025)).
 - Activity: inset-grouped list, grouped by day, searchable, segmented Sent/Received (cf. [Up's payments feed](https://mobbin.com/screens/dcc8ea7e-d329-4544-8b84-3a50afce5acf)).
 - Payment detail: hero amount, status pill, receipt rows (cf. [Careem transfer details](https://mobbin.com/screens/7d081fd9-176e-4d5b-86b5-bc75fe6c932e), [Wise transfer timeline](https://mobbin.com/screens/25e11619-e36d-45bd-b170-df6beedef976)).
+- Request: tick people, then split equally or per person with a running total and a title (cf. [Vipps even/amount split](https://mobbin.com/screens/29371741-5017-4565-8630-4f2a93ed380b), [Chime add expense](https://mobbin.com/screens/e74ec6a2-da02-4d82-a3df-06bf8a53df16)).
+- Split detail: received-of-requested progress, "n of m paid", per-person state, remind button and a copyable link (cf. [Binance split bill](https://mobbin.com/screens/9a761c25-bc5c-46b1-b72f-a6d498857404), [Chime split](https://mobbin.com/screens/deff42f7-bf0f-4b13-854b-17a4aac18b04), [Monzo shared link](https://mobbin.com/screens/a8479f63-774f-4a4e-96b4-64c03c703ec6)).
 - Collect: progress bar + per-person paid/unpaid rows (cf. [Wise bill split](https://mobbin.com/screens/ba945d27-f5b4-4137-b24a-c9815dac53a5), [Chime split](https://mobbin.com/screens/855cf747-d521-470f-a960-6c4524e9f3d6)).
 - Me: avatar header and settings-style grouped rows (cf. [Cash App profile](https://mobbin.com/screens/110068c2-2e43-4f51-a7c5-6cd6bc1e90ba), [CVS account](https://mobbin.com/screens/7bfd68bd-058d-4b39-b097-b448b3ac6ab4)).
 

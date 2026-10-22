@@ -51,7 +51,7 @@ Tests: Product → Test, or `scripts/ios-test.sh "iPhone 16"`.
    - sort code `99-99-99`: NO_MATCH (blocked)
    - `04-00-04` `87654321` with `priya  patel`: CLOSE_MATCH, bank's name "Priya Patel"
 4. Bank details are stored encrypted with `BANK_DATA_KEY`; `GET /me` never returns them.
-5. Directory: `npm run seed` creates Sam (+44 7700 900001), Priya (…002) and Tom (…003). Add those numbers to a simulator contact and the lookup will mark them registered once the contact picker lands in Phase 2. Until then `POST /directory/lookup` can be exercised with `curl` using SHA-256 hashes of E.164 numbers.
+5. Directory: `npm run seed` creates Sam (+44 7700 900001), Priya (…002) and Tom (…003). Add those numbers to a simulator contact and the Pay and Request pickers list them under "On Quid". `POST /directory/lookup` can also be exercised with `curl` using SHA-256 hashes of E.164 numbers.
 6. `POST /auth/logout` ends the session; `DELETE /me` deletes bank details and blanks the phone number.
 
 MockMode equivalents: code `123456`; sort code `999999` is NO_MATCH; an all-lowercase holder name is CLOSE_MATCH. Launch with `-mock -signed-out` to start on the welcome screen.
@@ -83,6 +83,19 @@ Everything here comes from the product brief and TrueLayer's public repositories
 
 If this is run from the cloud session that built it: `docs.truelayer.com`, `api.truelayer-sandbox.com`, `auth.truelayer-sandbox.com` and `webhooks.truelayer-sandbox.com` must be allowed in the environment's network settings first.
 
+## Phase 3: requests and splits
+
+### With the backend
+
+1. `npm run seed` also gives Sam (+44 7700 900001) two open requests: Priya's "Pizza night" split (£18) and Tom's "Flat Wi-Fi" (£11.25). Sign in as Sam (the code is in the backend log) and link any bank account: Home shows "Requests for you".
+2. **Pay** on a request opens the amount screen with the amount and reference fixed. Approve on the fake bank page; once the payment executes the card leaves Home and Activity → Requests shows it as Paid. **Decline** asks first.
+3. **Request** on Home: tick people on Quid (their numbers must be in the simulator's contacts), choose "Split equally" (keypad, optional "Include me") or "Custom amounts", add a title and send. The split's detail shows progress, a Nudge per person (once per 24 hours each), the shareable link and "Remind everyone unpaid". To pay a share, sign in as that person on a second simulator.
+4. Reminders and new requests are `push notification (stub)` lines in the backend log, with ids only.
+5. Invite buttons share `http://localhost:3000/i/<code>`. A split's link is `http://localhost:3000/s/<id>`: open it in the simulator's Safari and tap "Open in Quid" to test the `quid://split/<id>` deep link. Set `APP_DOWNLOAD_URL` to make the pages link to TestFlight or the App Store.
+6. Open requests expire after 14 days; the hourly sweep writes EXPIRED, and every read already shows it.
+
+MockMode (`-mock`): Home shows Priya's and Tom's requests and Activity → Requests also shows Amara's paid one and the "Flat cleaning supplies" split (Priya paid, Amara declined, Tom open and due a nudge). In a split you create, Priya pays her share after five seconds; nobody else pays.
+
 ## CI
 
 `.github/workflows/ci.yml`: backend job on Ubuntu (`npm ci`, typecheck, test); iOS job on `macos-15` that picks the newest Xcode 16 and the newest plain-numbered iPhone simulator available, then runs `xcodebuild test` for the `QuidApp` scheme (unit + UI tests). The raw xcodebuild log is uploaded as an artifact. A crashing test host fails the job even when xcodebuild exits 0 (it otherwise relaunches the host and reports the survivors as passed), and on failure the job prints the newest `QuidApp` crash reports and the simulator log lines for the app, so a crash can be read from the job log without the artifact.
@@ -94,4 +107,4 @@ If this is run from the cloud session that built it: `docs.truelayer.com`, `api.
 
 ## Go-live checklist (Phase 5)
 
-Hosts, keys, `NotImplementedPayeeVerifier` → real CoP, SMS sender, universal-link domain. Filled in during Phase 5.
+Hosts, keys, `NotImplementedPayeeVerifier` → real CoP, SMS sender, universal-link domain (including `/s/<id>` split links and `APP_DOWNLOAD_URL`). Filled in during Phase 5.
