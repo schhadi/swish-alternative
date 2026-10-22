@@ -27,5 +27,19 @@ struct MainTabView: View {
                 .tabItem { Label("Me", systemImage: "person.crop.circle.fill") }
                 .tag(AppTab.me)
         }
+        .sheet(item: deepLink) { link in
+            switch link {
+            case .split(let id):
+                SplitLinkView(api: appEnvironment.api, splitId: id)
+                    .environment(appEnvironment)
+            }
+        }
+    }
+
+    private var deepLink: Binding<DeepLink?> {
+        Binding(
+            get: { appEnvironment.pendingDeepLink },
+            set: { appEnvironment.pendingDeepLink = $0 }
+        )
     }
 }

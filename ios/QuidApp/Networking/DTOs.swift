@@ -84,6 +84,7 @@ enum RequestStatus: String, Codable, Sendable {
     case expired = "EXPIRED"
 }
 
+/// A request for money. Both sides get the same fields; the reminder fields matter to the requester only.
 struct PaymentRequestDTO: Codable, Hashable, Identifiable, Sendable {
     let id: String
     let requesterUserId: String
@@ -96,12 +97,82 @@ struct PaymentRequestDTO: Codable, Hashable, Identifiable, Sendable {
     let expiresAt: Date
     let createdAt: Date
     let requester: CounterpartyDTO
+    /// The person asked.
+    let payer: CounterpartyDTO?
     /// Present when the request is one share of a split.
+    let splitId: String?
     let splitTitle: String?
+    let paidAt: Date?
+    let declinedAt: Date?
+    let lastRemindedAt: Date?
+    let remindCount: Int?
+    /// When the requester may nudge again; nil means now.
+    let nextReminderAt: Date?
 }
 
 struct RequestListDTO: Codable, Sendable {
     let requests: [PaymentRequestDTO]
+}
+
+/// One person's part of a split, as its creator sees it.
+struct SplitShareDTO: Codable, Hashable, Identifiable, Sendable {
+    let id: String
+    let requestId: String
+    let userId: String
+    let displayName: String
+    let amountMinor: Int
+    let status: RequestStatus
+    let paymentId: String?
+    let paidAt: Date?
+    let declinedAt: Date?
+    let lastRemindedAt: Date?
+    let remindCount: Int
+    /// When the creator may nudge again; nil means now.
+    let nextReminderAt: Date?
+}
+
+/// A split from its creator's side (GET /splits/:id). Other people only ever see their own request.
+struct SplitDTO: Codable, Hashable, Identifiable, Sendable {
+    let id: String
+    let title: String
+    let totalMinor: Int
+    let createdAt: Date
+    /// The part of the total nobody was asked for: the creator's own share.
+    let creatorShareMinor: Int
+    let requestedMinor: Int
+    let paidMinor: Int
+    let shareCount: Int
+    let paidCount: Int
+    let pendingCount: Int
+    /// Nobody is left to pay: every share is paid, declined or expired.
+    let isComplete: Bool
+    /// https://<domain>/s/<id>: a page that opens the split in the app.
+    let link: String
+    let shares: [SplitShareDTO]
+}
+
+struct SplitListDTO: Codable, Sendable {
+    let splits: [SplitDTO]
+}
+
+struct SkippedReminderDTO: Codable, Hashable, Sendable {
+    let requestId: String
+    /// "too_soon" (nudged in the last 24 hours) or "not_pending".
+    let reason: String
+    let nextReminderAt: Date?
+}
+
+struct SplitReminderResultDTO: Codable, Sendable {
+    let reminded: [String]
+    let skipped: [SkippedReminderDTO]
+    let split: SplitDTO
+}
+
+/// The signed-in user's invite link for contacts who are not on Quid.
+struct InviteDTO: Codable, Hashable, Sendable {
+    let code: String
+    let url: String
+    let message: String
 }
 
 enum OrgKind: String, Codable, Sendable {

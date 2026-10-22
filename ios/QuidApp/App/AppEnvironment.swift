@@ -22,6 +22,8 @@ final class AppEnvironment {
 
     /// True from "Get started" (or a resumed step) until the contacts explainer is dismissed.
     private(set) var onboardingInProgress = false
+    /// A link opened from outside (a split's "Open in Quid"). Shown once the main tabs are up; cleared when dismissed.
+    var pendingDeepLink: DeepLink?
     /// Per-device flags (UserDefaults): trivial state only, per docs/SPEC.md section 2.
     private(set) var contactsExplainerSeen: Bool
     private(set) var bankLinkSkipped: Bool
@@ -207,6 +209,7 @@ final class AppEnvironment {
     /// device, including a half-finished onboarding, so RootView shows Welcome and nothing leaks to the next account.
     func sessionEnded() {
         session.signOut()
+        pendingDeepLink = nil
         profile = nil
         profileError = nil
         hasLoadedProfile = false

@@ -3,7 +3,8 @@ import SwiftUI
 /// Full-bleed Paid / Pending / Failed screen driven by the server's status (docs/SPEC.md section 8, screen 4).
 struct PaymentResultView: View {
     @Bindable var viewModel: PayViewModel
-    @State private var placeholder: PhasePlaceholder?
+    @Environment(AppEnvironment.self) private var appEnvironment
+    @State private var splitPrefill: RequestPrefill?
 
     private var kind: PayResultKind { viewModel.resultKind }
 
@@ -21,7 +22,10 @@ struct PaymentResultView: View {
         }
         .background(background.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(item: $placeholder) { PhasePlaceholderSheet(placeholder: $0) }
+        .fullScreenCover(item: $splitPrefill) { prefill in
+            RequestFlowView(environment: appEnvironment, prefill: prefill) {}
+                .environment(appEnvironment)
+        }
         .onDisappear { viewModel.stopPolling() }
         // The title and copy change in place when the poll catches up with the bank; VoiceOver hears the outcome.
         .onChange(of: kind) {
@@ -89,8 +93,10 @@ struct PaymentResultView: View {
         VStack(spacing: 12) {
             switch kind {
             case .paid:
-                QuidButton(title: "Split this with others", style: .secondary) { placeholder = .request }
-                    .accessibilityIdentifier("pay.split")
+                if let prefill = viewModel.splitPrefill {
+                    QuidButton(title: "Split this with others", style: .secondary) { splitPrefill = prefill }
+                        .accessibilityIdentifier("pay.split")
+                }
                 QuidButton(title: "Done", style: .onTint(fill: ink, text: background)) { viewModel.done() }
                     .accessibilityIdentifier("pay.done")
             case .pending:

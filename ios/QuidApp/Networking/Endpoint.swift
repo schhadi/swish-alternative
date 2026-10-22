@@ -37,6 +37,10 @@ enum PaymentRole: String, Sendable {
     case sent, received
 }
 
+enum RequestRole: String, Sendable {
+    case incoming, outgoing
+}
+
 /// Every backend call the app makes, in one place. Add endpoints here as phases land.
 enum API {
     static func health() -> Endpoint<HealthDTO> {
@@ -63,8 +67,9 @@ enum API {
         Endpoint(method: .get, path: "/payments/\(id)")
     }
 
+    /// Requests addressed to me that are still open (Home's "Requests for you").
     static func incomingRequests() -> Endpoint<RequestListDTO> {
-        Endpoint(method: .get, path: "/requests", query: [URLQueryItem(name: "role", value: "incoming")])
+        requests(role: .incoming, pendingOnly: true)
     }
 
     static func organisations() -> Endpoint<OrgListDTO> {
@@ -110,6 +115,54 @@ enum API {
     static func createPayment(_ request: CreatePaymentRequest) -> Endpoint<PaymentCreateResponseDTO> {
         Endpoint(method: .post, path: "/payments", body: request)
     }
+
+    // MARK: Phase 3
+
+    /// Paying a request: the server takes the payee, amount and reference from the request.
+    static func payRequest(_ body: PayRequestBody) -> Endpoint<PaymentCreateResponseDTO> {
+        Endpoint(method: .post, path: "/payments", body: body)
+    }
+
+    static func requests(role: RequestRole, pendingOnly: Bool = false) -> Endpoint<RequestListDTO> {
+        Endpoint(
+            method: .get,
+            path: "/requests",
+            query: [URLQueryItem(name: "role", value: role.rawValue), URLQueryItem(name: "status", value: pendingOnly ? "pending" : "all")]
+        )
+    }
+
+    static func request(id: String) -> Endpoint<PaymentRequestDTO> {
+        Endpoint(method: .get, path: "/requests/\(id)")
+    }
+
+    static func declineRequest(id: String) -> Endpoint<PaymentRequestDTO> {
+        Endpoint(method: .post, path: "/requests/\(id)/decline")
+    }
+
+    static func remindRequest(id: String) -> Endpoint<PaymentRequestDTO> {
+        Endpoint(method: .post, path: "/requests/\(id)/remind")
+    }
+
+    static func createSplit(_ body: CreateSplitRequest) -> Endpoint<SplitDTO> {
+        Endpoint(method: .post, path: "/splits", body: body)
+    }
+
+    static func splits() -> Endpoint<SplitListDTO> {
+        Endpoint(method: .get, path: "/splits")
+    }
+
+    static func split(id: String) -> Endpoint<SplitDTO> {
+        Endpoint(method: .get, path: "/splits/\(id)")
+    }
+
+    /// "Remind everyone unpaid", or only the requests named.
+    static func remindSplit(id: String, requestIds: [String]? = nil) -> Endpoint<SplitReminderResultDTO> {
+        Endpoint(method: .post, path: "/splits/\(id)/remind", body: RemindSplitRequest(requestIds: requestIds))
+    }
+
+    static func invite() -> Endpoint<InviteDTO> {
+        Endpoint(method: .get, path: "/me/invite")
+    }
 }
 
 // MARK: - Request bodies
@@ -131,6 +184,28 @@ struct CreatePaymentRequest: Codable, Equatable, Sendable {
     let payeeUserId: String
     let amountMinor: Int
     let reference: String
+}
+
+struct PayRequestBody: Codable, Equatable, Sendable {
+    let requestId: String
+    /// Sent so the server can refuse if the request changed under us; it must equal the request's amount.
+    let amountMinor: Int
+}
+
+struct CreateSplitRequest: Codable, Equatable, Sendable {
+    struct Share: Codable, Equatable, Sendable {
+        let userId: String
+        let amountMinor: Int
+    }
+
+    let title: String
+    /// The whole bill. Whatever the shares don't cover is the creator's own part.
+    let totalMinor: Int
+    let shares: [Share]
+}
+
+struct RemindSplitRequest: Codable, Sendable {
+    let requestIds: [String]?
 }
 
 struct BankAccountRequest: Codable, Equatable, Sendable {

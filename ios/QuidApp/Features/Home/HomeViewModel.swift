@@ -18,6 +18,9 @@ final class HomeViewModel {
     private(set) var me: MeDTO?
     private(set) var payments: [PaymentDTO] = []
     private(set) var incomingRequests: [PaymentRequestDTO] = []
+    /// Why the last Decline didn't go through; shown under the requests.
+    private(set) var requestError: String?
+    private(set) var decliningIds: Set<String> = []
     private(set) var error: AppError?
     private(set) var isLoading = false
 
@@ -79,6 +82,30 @@ final class HomeViewModel {
 
     var recentPayments: [PaymentDTO] {
         Array(payments.prefix(5))
+    }
+
+    /// Declines a request addressed to the user and drops it from Home.
+    func decline(_ request: PaymentRequestDTO) async {
+        guard !decliningIds.contains(request.id) else { return }
+        decliningIds.insert(request.id)
+        defer { decliningIds.remove(request.id) }
+        do {
+            _ = try await api.send(API.declineRequest(id: request.id))
+            incomingRequests.removeAll { $0.id == request.id }
+            requestError = nil
+        } catch is CancellationError {
+            return
+        } catch let appError as AppError {
+            requestError = appError.userMessage
+            if appError.code == "request_not_pending" {
+                // Paid or expired in the meantime: show the list as it now is.
+                if let fresh = try? await api.send(API.incomingRequests()) {
+                    incomingRequests = fresh.requests.filter { $0.status == .pending }
+                }
+            }
+        } catch {
+            requestError = error.localizedDescription
+        }
     }
 
     func load() async {

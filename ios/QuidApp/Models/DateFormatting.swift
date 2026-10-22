@@ -20,6 +20,18 @@ extension Date {
         return formatted(.dateTime.day().month(.abbreviated).year())
     }
 
+    /// Inside a sentence: "at 14:05" today, "yesterday", "on Monday" within the last week, else "on 14 Oct".
+    var quidInlineDescription: String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(self) {
+            return "at \(formatted(date: .omitted, time: .shortened))"
+        }
+        if calendar.isDateInYesterday(self) {
+            return "yesterday"
+        }
+        return "on \(quidRelativeDescription)"
+    }
+
     /// Activity section title: "Today", "Yesterday", else "Tuesday 14 October" (with year if not this year).
     var quidSectionTitle: String {
         let calendar = Calendar.current

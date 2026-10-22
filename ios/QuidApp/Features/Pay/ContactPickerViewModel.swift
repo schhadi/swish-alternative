@@ -24,14 +24,22 @@ final class ContactPickerViewModel {
     private(set) var isLoading = false
     private(set) var hasLoaded = false
     private(set) var error: AppError?
+    /// This user's invite link, shared from the Invite buttons. Nil until loaded; the buttons wait for it.
+    private(set) var invite: InviteDTO?
 
     private let contactSource: any ContactSource
     private let directory: DirectoryService
+    private let api: APIClient
 
     init(contactSource: any ContactSource, api: APIClient) {
         self.contactSource = contactSource
+        self.api = api
         directory = DirectoryService(api: api)
         permission = ContactPickerViewModel.permission(for: contactSource.authorizationStatus)
+    }
+
+    var inviteURL: URL? {
+        invite.flatMap { URL(string: $0.url) }
     }
 
     var registered: [Entry] {
@@ -80,6 +88,14 @@ final class ContactPickerViewModel {
         } catch {
             self.error = .unknown(error.localizedDescription)
         }
+        if invite == nil, entries.contains(where: { !$0.isRegistered }) {
+            await loadInvite()
+        }
+    }
+
+    /// Failure is quiet: the Invite buttons stay disabled and the next load tries again.
+    func loadInvite() async {
+        invite = try? await api.send(API.invite())
     }
 
     static func permission(for status: CNAuthorizationStatus) -> Permission {

@@ -57,6 +57,7 @@ final class MockServer: @unchecked Sendable {
     private var routes: [String: MockResponse]
     private var handlers: [String: MockHandler]
     private var recorded: [URLRequest] = []
+    private var recordedCallList: [MockRequest] = []
     private var storedLatency: TimeInterval = 0.35
 
     init() {
@@ -97,6 +98,7 @@ final class MockServer: @unchecked Sendable {
         routes = MockFixtures.defaultRoutes()
         handlers = MockFixtures.defaultHandlers()
         recorded = []
+        recordedCallList = []
         storedLatency = latency
         MockFixtures.state.reset(complete: signedIn)
     }
@@ -108,6 +110,7 @@ final class MockServer: @unchecked Sendable {
         guard let method = request.httpMethod, let url = request.url else { return nil }
         let path = url.path(percentEncoded: false)
         let query = url.query(percentEncoded: false)
+        recordedCallList.append(MockRequest(method: method.uppercased(), path: path, query: query, body: body))
         if let handler = handlers[MockServer.key(method, path)] {
             return handler(MockRequest(method: method.uppercased(), path: path, query: query, body: body))
         }
@@ -130,6 +133,13 @@ final class MockServer: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return recorded
+    }
+
+    /// The same calls with their bodies already read, so tests can decode what was sent.
+    func recordedCalls() -> [MockRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedCallList
     }
 
     private static func key(_ method: String, _ pathAndQuery: String) -> String {

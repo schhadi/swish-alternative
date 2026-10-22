@@ -5,6 +5,7 @@ enum ActivityFilter: String, CaseIterable, Identifiable {
     case all = "All"
     case sent = "Sent"
     case received = "Received"
+    case requests = "Requests"
 
     var id: String { rawValue }
 }
@@ -22,6 +23,10 @@ final class ActivityViewModel {
     var filter: ActivityFilter = .all
     private(set) var me: MeDTO?
     private(set) var payments: [PaymentDTO] = []
+    /// Splits the user created, newest first.
+    private(set) var splits: [SplitDTO] = []
+    /// Requests addressed to the user, every status, newest first.
+    private(set) var incoming: [PaymentRequestDTO] = []
     private(set) var error: AppError?
     private(set) var isLoading = false
 
@@ -42,6 +47,27 @@ final class ActivityViewModel {
 
     var currentUserId: String {
         me?.user.id ?? ""
+    }
+
+    /// Payments, splits or requests: anything at all to show.
+    var hasAnything: Bool {
+        !payments.isEmpty || !splits.isEmpty || !incoming.isEmpty
+    }
+
+    private var query: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    var filteredSplits: [SplitDTO] {
+        guard !query.isEmpty else { return splits }
+        return splits.filter { split in
+            split.title.lowercased().contains(query) || split.shares.contains { $0.displayName.lowercased().contains(query) }
+        }
+    }
+
+    var filteredIncoming: [PaymentRequestDTO] {
+        guard !query.isEmpty else { return incoming }
+        return incoming.filter { $0.requester.displayName.lowercased().contains(query) || $0.title.lowercased().contains(query) }
     }
 
     var filteredPayments: [PaymentDTO] {
@@ -79,9 +105,13 @@ final class ActivityViewModel {
             async let meTask = api.send(API.me())
             async let sentTask = api.send(API.payments(role: .sent))
             async let receivedTask = api.send(API.payments(role: .received))
-            let (me, sent, received) = try await (meTask, sentTask, receivedTask)
+            async let splitsTask = api.send(API.splits())
+            async let incomingTask = api.send(API.requests(role: .incoming))
+            let (me, sent, received, splits, incoming) = try await (meTask, sentTask, receivedTask, splitsTask, incomingTask)
             self.me = me
             self.payments = (sent.payments + received.payments).sorted { $0.createdAt > $1.createdAt }
+            self.splits = splits.splits
+            self.incoming = incoming.requests
             self.error = nil
             hasLoaded = true
         } catch is CancellationError {

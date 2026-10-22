@@ -45,9 +45,13 @@ struct RootView: View {
         .onChange(of: dynamicTypeSize) {
             QuidAppearance.configure()
         }
-        // The bank sends the payer back to quid://return/payment; the authoriser decides what to do with it.
+        // Split links open a screen; anything else (quid://return/payment from the bank) goes to the authoriser.
         .onOpenURL { url in
-            _ = appEnvironment.paymentAuthoriser.handleReturn(url: url)
+            if let link = DeepLink(url: url) {
+                appEnvironment.pendingDeepLink = link
+            } else {
+                _ = appEnvironment.paymentAuthoriser.handleReturn(url: url)
+            }
         }
     }
 

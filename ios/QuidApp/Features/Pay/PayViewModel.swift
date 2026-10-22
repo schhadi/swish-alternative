@@ -19,6 +19,8 @@ final class PayViewModel {
 
     /// Opened without a person: the contact picker is the root. Otherwise the amount screen is.
     let rootIsPicker: Bool
+    /// Paying a request someone sent: the person, amount and reference come from it and cannot be changed.
+    let request: PaymentRequestDTO?
     var path: [Step] = []
     private(set) var target: PayTarget?
 
@@ -54,13 +56,23 @@ final class PayViewModel {
     private let authoriser: any PaymentAuthoriser
     private var pollTask: Task<Void, Never>?
 
-    init(environment: AppEnvironment, target: PayTarget?, authoriser: (any PaymentAuthoriser)? = nil) {
+    init(environment: AppEnvironment, target: PayTarget?, request: PaymentRequestDTO? = nil, authoriser: (any PaymentAuthoriser)? = nil) {
         self.environment = environment
         self.authoriser = authoriser ?? environment.paymentAuthoriser
-        self.target = target
-        rootIsPicker = target == nil
-        reference = PayViewModel.defaultReference(for: environment.profile?.user.displayName)
+        self.request = request
+        if let request {
+            self.target = PayTarget(userId: request.requesterUserId, displayName: request.requester.displayName)
+            rootIsPicker = false
+            amountText = PayViewModel.text(fromMinor: request.amountMinor)
+            reference = request.reference
+        } else {
+            self.target = target
+            rootIsPicker = target == nil
+            reference = PayViewModel.defaultReference(for: environment.profile?.user.displayName)
+        }
     }
+
+    var isPayingRequest: Bool { request != nil }
 
     // MARK: - Derived
 
@@ -142,6 +154,14 @@ final class PayViewModel {
         }
     }
 
+    /// "Split this with others" after paying: the amount as the bill (the user paid it, so their own share is in it)
+    /// and the reference as the title unless it is the default "From <name>". Not offered for a paid request.
+    var splitPrefill: RequestPrefill? {
+        guard request == nil, let payment else { return nil }
+        let isDefault = payment.reference == PayViewModel.defaultReference(for: environment.profile?.user.displayName)
+        return RequestPrefill(totalMinor: payment.amountMinor, title: isDefault ? "" : payment.reference, includeMe: true)
+    }
+
     // MARK: - Choosing and typing
 
     func select(_ target: PayTarget) {
@@ -153,27 +173,14 @@ final class PayViewModel {
     }
 
     func press(_ key: KeypadKey) {
+        // A request fixes the amount.
+        guard request == nil else { return }
         error = nil
-        switch key {
-        case .digit(let digit):
-            let parts = amountText.split(separator: ".", omittingEmptySubsequences: false)
-            if parts.count == 2 {
-                guard parts[1].count < 2 else { return }
-            } else {
-                guard amountText.count < 5 else { return }
-                if amountText == "0" { amountText = "" }
-            }
-            amountText.append(String(digit))
-        case .point:
-            guard !amountText.contains(".") else { return }
-            amountText = amountText.isEmpty ? "0." : amountText + "."
-        case .delete:
-            guard !amountText.isEmpty else { return }
-            amountText.removeLast()
-        }
+        amountText = PayViewModel.applying(key, to: amountText)
     }
 
     func setQuickAmount(_ minor: Int) {
+        guard request == nil else { return }
         error = nil
         amountText = PayViewModel.text(fromMinor: minor)
     }
@@ -185,9 +192,13 @@ final class PayViewModel {
         isSubmitting = true
         defer { isSubmitting = false }
         do {
-            let response = try await environment.api.send(
-                API.createPayment(CreatePaymentRequest(payeeUserId: target.userId, amountMinor: amountMinor, reference: reference.trimmingCharacters(in: .whitespaces)))
-            )
+            let endpoint: Endpoint<PaymentCreateResponseDTO>
+            if let request {
+                endpoint = API.payRequest(PayRequestBody(requestId: request.id, amountMinor: request.amountMinor))
+            } else {
+                endpoint = API.createPayment(CreatePaymentRequest(payeeUserId: target.userId, amountMinor: amountMinor, reference: reference.trimmingCharacters(in: .whitespaces)))
+            }
+            let response = try await environment.api.send(endpoint)
             created = response
             error = nil
             if response.firstTimePayee {
@@ -319,6 +330,43 @@ final class PayViewModel {
         let folded = raw.folding(options: .diacriticInsensitive, locale: nil)
         let allowed = folded.filter { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == " " || "&./-".contains($0)) }
         return String(allowed.prefix(referenceMaxLength))
+    }
+
+    /// The keypad's editing rule, shared with the request flow: at most five pounds digits and two decimals.
+    static func applying(_ key: KeypadKey, to text: String) -> String {
+        var text = text
+        switch key {
+        case .digit(let digit):
+            let parts = text.split(separator: ".", omittingEmptySubsequences: false)
+            if parts.count == 2 {
+                guard parts[1].count < 2 else { return text }
+            } else {
+                guard text.count < 5 else { return text }
+                if text == "0" { text = "" }
+            }
+            text.append(String(digit))
+        case .point:
+            guard !text.contains(".") else { return text }
+            text = text.isEmpty ? "0." : text + "."
+        case .delete:
+            guard !text.isEmpty else { return text }
+            text.removeLast()
+        }
+        return text
+    }
+
+    /// The same rule for a typed amount (the request flow's per-person fields): digits and one point, at most five
+    /// pounds digits and two decimals. Anything else typed or pasted is dropped.
+    static func sanitisedAmount(_ raw: String) -> String {
+        var result = ""
+        for character in raw {
+            if character.isASCII, character.isNumber {
+                result = applying(.digit(Int(String(character)) ?? 0), to: result)
+            } else if character == "." || character == "," {
+                result = applying(.point, to: result)
+            }
+        }
+        return result
     }
 
     static func minor(from text: String) -> Int {

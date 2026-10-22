@@ -1,6 +1,6 @@
 import XCTest
 
-/// Launch and onboarding smoke tests against MockMode. The pay-flow XCUITest lands in Phase 5.
+/// Launch, onboarding, pay, request and pay-a-request journeys against MockMode.
 final class QuidAppUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -69,6 +69,79 @@ final class QuidAppUITests: XCTestCase {
 
         waitFor(app.tabBars.buttons["Home"], in: app, timeout: 10)
         XCTAssertTrue(app.staticTexts["Priya Patel"].firstMatch.waitForExistence(timeout: 10))
+    }
+
+    /// Waits until the element has gone, for things that disappear after a reload.
+    private func waitForAbsence(_ element: XCUIElement, timeout: TimeInterval = 10, file: StaticString = #filePath, line: UInt = #line) {
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)
+        if XCTWaiter().wait(for: [gone], timeout: timeout) != .completed {
+            XCTFail("\(element) was still there after \(Int(timeout))s", file: file, line: line)
+        }
+    }
+
+    @MainActor
+    func testRequestFlowCreatesASplit() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-mock"]
+        app.launch()
+
+        let request = app.buttons["home.request"]
+        waitFor(request, in: app, timeout: 20)
+        request.tap()
+
+        let priya = app.buttons["request.contact.u_priya"]
+        waitFor(priya, in: app, timeout: 10)
+        priya.tap()
+        app.buttons["request.contact.u_tom"].tap()
+        app.buttons["request.continue"].tap()
+
+        let total = app.staticTexts["request.total"]
+        waitFor(total, in: app, timeout: 10)
+        app.buttons["pay.key.3"].tap()
+        app.buttons["pay.key.0"].tap()
+        XCTAssertEqual(total.value as? String, "£30.00")
+        XCTAssertFalse(app.buttons["request.submit"].isEnabled, "a title is required")
+
+        let title = app.textFields["request.title"]
+        focus(title)
+        title.typeText("Pizza")
+        let submit = app.buttons["request.submit"]
+        XCTAssertTrue(submit.isEnabled)
+        submit.tap()
+
+        // The new split's detail: sent banner and one row per person asked.
+        waitFor(app.descendants(matching: .any)["split.sent"], in: app, timeout: 10)
+        XCTAssertTrue(app.descendants(matching: .any)["split.share.u_priya"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["split.share.u_tom"].exists)
+        app.buttons["split.done"].tap()
+        waitFor(app.buttons["home.request"], in: app, timeout: 10)
+    }
+
+    @MainActor
+    func testPayingARequestFromHome() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-mock"]
+        app.launch()
+
+        let pay = app.buttons["home.request.pay.req_301"]
+        waitFor(pay, in: app, timeout: 20)
+        pay.tap()
+
+        let amount = app.staticTexts["pay.amount"]
+        waitFor(amount, in: app, timeout: 10)
+        XCTAssertEqual(amount.value as? String, "£18.00")
+        XCTAssertFalse(app.buttons["pay.key.1"].exists, "a request fixes the amount")
+        app.buttons["pay.submit"].tap()
+
+        let resultTitle = app.staticTexts["pay.result.title"]
+        waitFor(resultTitle, in: app, timeout: 15)
+        let paid = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Paid"), object: resultTitle)
+        XCTAssertEqual(XCTWaiter().wait(for: [paid], timeout: 15), .completed, "result title was \(resultTitle.label)")
+        app.buttons["pay.done"].tap()
+
+        waitFor(app.buttons["home.request"], in: app, timeout: 10)
+        waitForAbsence(app.buttons["home.request.pay.req_301"])
+        XCTAssertTrue(app.buttons["home.request.pay.req_302"].exists, "Tom's request is still open")
     }
 
     @MainActor

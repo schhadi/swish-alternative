@@ -9,6 +9,10 @@ final class MockProfileState: @unchecked Sendable {
     var hasSignedIn = true
     /// Payments created through POST /payments this launch, newest last. Their status advances with age.
     var createdPayments: [MockCreatedPayment] = []
+    /// Phase 3: splits created this launch (newest last), incoming requests declined, and nudges sent, by request id.
+    var createdSplits: [MockSplit] = []
+    var declinedRequestIds: Set<String> = []
+    var reminders: [String: MockReminder] = [:]
 
     /// `complete` = an existing user with name and bank (the demo); otherwise a brand-new user.
     func reset(complete: Bool) {
@@ -18,6 +22,9 @@ final class MockProfileState: @unchecked Sendable {
         otpAttemptsRemaining = 5
         hasSignedIn = complete
         createdPayments = []
+        createdSplits = []
+        declinedRequestIds = []
+        reminders = [:]
     }
 
     var isComplete: Bool {
@@ -34,6 +41,8 @@ struct MockCreatedPayment: Sendable {
     let amountMinor: Int
     let reference: String
     let createdAt: Date
+    /// Set when the payment pays an incoming request.
+    var requestId: String? = nil
 
     func status(at now: Date = Date()) -> String {
         let age = now.timeIntervalSince(createdAt)
@@ -41,6 +50,66 @@ struct MockCreatedPayment: Sendable {
         if age < 4 { return "EXECUTED" }
         return "SETTLED"
     }
+}
+
+/// A split the mock backend created. Priya pays her share five seconds after it is created, so the demo shows a
+/// split filling up; everyone else stays open until nudged, and nobody declines.
+struct MockSplit: Sendable {
+    struct Share: Sendable {
+        let requestId: String
+        let userId: String
+        let name: String
+        let amountMinor: Int
+    }
+
+    let id: String
+    let title: String
+    let totalMinor: Int
+    let createdAt: Date
+    let shares: [Share]
+}
+
+struct MockReminder: Sendable {
+    var at: Date
+    var count: Int
+}
+
+/// One share of a split with its state worked out, ready to encode.
+struct MockShareState: Sendable {
+    let requestId: String
+    let userId: String
+    let name: String
+    let amountMinor: Int
+    let status: String
+    let paidAt: Date?
+    let declinedAt: Date?
+    let remindedAt: Date?
+    let remindCount: Int
+
+    var nextReminderAt: Date? {
+        remindedAt?.addingTimeInterval(24 * 3600)
+    }
+
+    func canBeReminded(at now: Date) -> Bool {
+        status == "PENDING" && (nextReminderAt.map { $0 <= now } ?? true)
+    }
+}
+
+/// A request addressed to the demo user.
+struct MockIncomingRequest: Sendable {
+    let id: String
+    let requesterId: String
+    let requesterName: String
+    let amountMinor: Int
+    let reference: String
+    let note: String?
+    let splitId: String?
+    let splitTitle: String?
+    let createdAt: Date
+    let expiresAt: Date
+    /// Fixed history (already paid); nil means worked out from what happened this launch.
+    let fixedStatus: String?
+    let paidAt: Date?
 }
 
 /// Canned backend responses for MockMode. Dates are relative to now so "Today" / "Yesterday" grouping stays realistic.
@@ -84,6 +153,9 @@ enum MockFixtures {
                 return .json(#"{"error":"not_found","message":"We couldn't find that payment."}"#, status: 404)
             },
             "POST /payments": { request in
+                if let pay = request.decode(PayRequestBody.self) {
+                    return payIncomingRequest(pay)
+                }
                 guard let body = request.decode(CreatePaymentRequest.self) else {
                     return .json(#"{"error":"validation_error","message":"Request failed validation"}"#, status: 400)
                 }
@@ -114,23 +186,88 @@ enum MockFixtures {
                     createdAt: Date()
                 )
                 state.createdPayments.append(created)
-                return .json(
-                    """
-                    {
-                      "paymentId": "\(created.id)",
-                      "tlPaymentId": "mock_tl_\(created.id)",
-                      "resourceToken": "mock_token_\(created.id)",
-                      "authorisationUrl": "https://mock.quid.invalid/authorise/\(created.id)",
-                      "firstTimePayee": \(!paidBefore),
-                      "provider": "mock",
-                      "payee": {"userId": "\(body.payeeUserId)", "displayName": "\(person.name)", "accountHolderName": \(paidBefore ? "null" : "\"\(person.accountHolderName)\""), "copStatus": "MATCH", "bankName": "\(person.bankName ?? "")"},
-                      "payment": \(createdPaymentJSON(created))
-                    }
-                    """,
-                    status: 201
-                )
+                return createdPaymentResponse(created, person: person, paidBefore: paidBefore)
             },
-            "GET /requests": { _ in .json(state.isComplete ? incomingRequests() : #"{"requests":[]}"#) },
+            "GET /requests": { request in
+                guard state.isComplete else { return .json(#"{"requests":[]}"#) }
+                let pendingOnly = request.query?.contains("status=pending") == true
+                if request.query?.contains("role=outgoing") == true {
+                    let rows = allSplits().flatMap { split in split.shares.map { outgoingRequestJSON($0, split: split) } }
+                    return .json(#"{"requests":[\#(rows.joined(separator: ","))]}"#)
+                }
+                let rows = incomingFixtures
+                    .filter { !pendingOnly || incomingStatus($0) == "PENDING" }
+                    .map(incomingRequestJSON)
+                return .json(#"{"requests":[\#(rows.joined(separator: ","))]}"#)
+            },
+            "GET /requests/*": { request in
+                let id = String(request.path.dropFirst("/requests/".count))
+                guard let incoming = incomingFixtures.first(where: { $0.id == id }) else { return requestNotFound }
+                return .json(incomingRequestJSON(incoming))
+            },
+            "POST /requests/*": { request in
+                let parts = request.path.split(separator: "/").map(String.init)
+                guard parts.count == 3 else { return requestNotFound }
+                let id = parts[1]
+                switch parts[2] {
+                case "decline":
+                    guard let incoming = incomingFixtures.first(where: { $0.id == id }) else { return requestNotFound }
+                    let status = incomingStatus(incoming)
+                    guard status == "PENDING" else { return notPending(status) }
+                    state.declinedRequestIds.insert(id)
+                    return .json(incomingRequestJSON(incoming))
+                case "remind":
+                    guard let found = findShare(requestId: id) else { return requestNotFound }
+                    let (split, share) = found
+                    if share.status != "PENDING" { return notPending(share.status) }
+                    if let next = share.nextReminderAt, next > Date() {
+                        return .json(#"{"error":"remind_too_soon","message":"You've nudged them in the last day. You can nudge again tomorrow.","details":{"nextReminderAt":"\#(ISO8601.string(from: next))"}}"#, status: 429)
+                    }
+                    remind(id)
+                    let updated = findShare(requestId: id)?.1 ?? share
+                    return .json(outgoingRequestJSON(updated, split: split))
+                default:
+                    return requestNotFound
+                }
+            },
+            "POST /splits": { request in
+                guard let body = request.decode(CreateSplitRequest.self) else {
+                    return .json(#"{"error":"validation_error","message":"Request failed validation"}"#, status: 400)
+                }
+                return createSplit(body)
+            },
+            "GET /splits": { _ in
+                guard state.isComplete else { return .json(#"{"splits":[]}"#) }
+                return .json(#"{"splits":[\#(allSplits().map(splitJSON).joined(separator: ","))]}"#)
+            },
+            "GET /splits/*": { request in
+                let id = String(request.path.dropFirst("/splits/".count))
+                guard let split = allSplits().first(where: { $0.id == id }) else { return splitNotFound }
+                return .json(splitJSON(split))
+            },
+            "POST /splits/*": { request in
+                let parts = request.path.split(separator: "/").map(String.init)
+                guard parts.count == 3, parts[2] == "remind", let split = allSplits().first(where: { $0.id == parts[1] }) else { return splitNotFound }
+                let wanted: Set<String>? = request.decode(RemindSplitRequest.self)?.requestIds.map { Set($0) }
+                var reminded: [String] = []
+                var skipped: [String] = []
+                let now = Date()
+                for share in split.shares where wanted?.contains(share.requestId) ?? true {
+                    if share.canBeReminded(at: now) {
+                        remind(share.requestId)
+                        reminded.append("\"\(share.requestId)\"")
+                    } else if share.status == "PENDING" {
+                        skipped.append(#"{"requestId":"\#(share.requestId)","reason":"too_soon","nextReminderAt":\#(jsonDate(share.nextReminderAt))}"#)
+                    } else {
+                        skipped.append(#"{"requestId":"\#(share.requestId)","reason":"not_pending","nextReminderAt":null}"#)
+                    }
+                }
+                let updated = allSplits().first { $0.id == split.id } ?? split
+                return .json(#"{"reminded":[\#(reminded.joined(separator: ","))],"skipped":[\#(skipped.joined(separator: ","))],"split":\#(splitJSON(updated))}"#)
+            },
+            "GET /me/invite": { _ in
+                .json(#"{"code":"sam2k7qx","url":"https://quid.example/i/sam2k7qx","message":"I'm using Quid to pay friends by phone number. Join me:"}"#)
+            },
             "GET /orgs": { _ in .json(state.isComplete ? organisations() : #"{"organisations":[]}"#) },
             "POST /auth/otp/start": { request in
                 guard let body = request.decode(OtpStartRequest.self), let e164 = UKPhone.normalise(body.phone) else {
@@ -235,7 +372,27 @@ enum MockFixtures {
             created: ISO8601.string(from: created.createdAt),
             settled: status == "SETTLED" ? ISO8601.string(from: created.createdAt.addingTimeInterval(4)) : nil,
             counterparty: counterparty,
-            bankName: providerName(state.providerId) ?? "Monzo"
+            bankName: providerName(state.providerId) ?? "Monzo",
+            requestId: created.requestId
+        )
+    }
+
+    /// The POST /payments answer for a payment the mock backend just created.
+    static func createdPaymentResponse(_ created: MockCreatedPayment, person: MockPerson, paidBefore: Bool) -> MockResponse {
+        .json(
+            """
+            {
+              "paymentId": "\(created.id)",
+              "tlPaymentId": "mock_tl_\(created.id)",
+              "resourceToken": "mock_token_\(created.id)",
+              "authorisationUrl": "https://mock.quid.invalid/authorise/\(created.id)",
+              "firstTimePayee": \(!paidBefore),
+              "provider": "mock",
+              "payee": {"userId": "\(person.userId)", "displayName": "\(person.name)", "accountHolderName": \(paidBefore ? "null" : "\"\(person.accountHolderName)\""), "copStatus": "MATCH", "bankName": "\(person.bankName ?? "")"},
+              "payment": \(createdPaymentJSON(created))
+            }
+            """,
+            status: 201
         )
     }
 
@@ -328,7 +485,8 @@ enum MockFixtures {
         settled: String?,
         failureReason: String? = nil,
         counterparty: String,
-        bankName: String = "Monzo"
+        bankName: String = "Monzo",
+        requestId: String? = nil
     ) -> String {
         """
         {
@@ -336,7 +494,7 @@ enum MockFixtures {
           "payerUserId": \(jsonString(payer)),
           "payeeUserId": \(jsonString(payee)),
           "collectionId": \(jsonString(collectionId)),
-          "requestId": null,
+          "requestId": \(jsonString(requestId)),
           "amountMinor": \(amount),
           "currency": "GBP",
           "reference": "\(reference)",
@@ -351,41 +509,236 @@ enum MockFixtures {
         """
     }
 
-    // MARK: - Requests
+    // MARK: - Requests and splits
 
-    static func incomingRequests() -> String {
+    private static let requestNotFound = MockResponse.json(#"{"error":"request_not_found","message":"We couldn't find that request."}"#, status: 404)
+    private static let splitNotFound = MockResponse.json(#"{"error":"split_not_found","message":"We couldn't find that split."}"#, status: 404)
+
+    private static func notPending(_ status: String) -> MockResponse {
+        let message: String
+        switch status {
+        case "PAID": message = "This request has already been paid."
+        case "DECLINED": message = "This request was declined."
+        default: message = "This request has expired."
+        }
+        return .json(#"{"error":"request_not_pending","message":"\#(message)","details":{"status":"\#(status)"}}"#, status: 409)
+    }
+
+    /// Requests addressed to Sam: Priya's pizza split and Tom's Wi-Fi are open; Amara's train tickets were paid.
+    static var incomingFixtures: [MockIncomingRequest] {
+        let now = Date()
+        return [
+            MockIncomingRequest(id: "req_301", requesterId: "u_priya", requesterName: "Priya Patel", amountMinor: 1800, reference: "Pizza night", note: "Friday pizza, split four ways", splitId: "split_p1", splitTitle: "Pizza night", createdAt: now.addingTimeInterval(-5 * 3600), expiresAt: now.addingTimeInterval(12 * 86400), fixedStatus: nil, paidAt: nil),
+            MockIncomingRequest(id: "req_302", requesterId: "u_tom", requesterName: "Tom Whitfield", amountMinor: 1125, reference: "Flat Wi-Fi", note: nil, splitId: nil, splitTitle: nil, createdAt: now.addingTimeInterval(-2 * 86400), expiresAt: now.addingTimeInterval(9 * 86400), fixedStatus: nil, paidAt: nil),
+            MockIncomingRequest(id: "req_299", requesterId: "u_amara", requesterName: "Amara Osei", amountMinor: 2400, reference: "Train tickets", note: "Brighton day trip", splitId: nil, splitTitle: nil, createdAt: now.addingTimeInterval(-6 * 86400), expiresAt: now.addingTimeInterval(8 * 86400), fixedStatus: "PAID", paidAt: now.addingTimeInterval(-5 * 86400)),
+        ]
+    }
+
+    /// Declined this launch, paid by a payment that left the bank, or still open.
+    static func incomingStatus(_ request: MockIncomingRequest) -> String {
+        if let fixed = request.fixedStatus { return fixed }
+        if state.declinedRequestIds.contains(request.id) { return "DECLINED" }
+        if paymentFor(request) != nil { return "PAID" }
+        return "PENDING"
+    }
+
+    private static func paymentFor(_ request: MockIncomingRequest) -> MockCreatedPayment? {
+        state.createdPayments.first { $0.requestId == request.id && $0.status() != "AUTHORIZING" }
+    }
+
+    static func incomingRequestJSON(_ request: MockIncomingRequest) -> String {
+        let status = incomingStatus(request)
+        let payment = paymentFor(request)
+        let paidAt = request.paidAt ?? payment?.createdAt.addingTimeInterval(2)
+        return """
+        {
+          "id": "\(request.id)",
+          "requesterUserId": "\(request.requesterId)",
+          "payerUserId": "\(meUserId)",
+          "amountMinor": \(request.amountMinor),
+          "reference": "\(request.reference)",
+          "note": \(jsonString(request.note)),
+          "status": "\(status)",
+          "paymentId": \(jsonString(payment?.id)),
+          "expiresAt": "\(ISO8601.string(from: request.expiresAt))",
+          "createdAt": "\(ISO8601.string(from: request.createdAt))",
+          "requester": {"userId":"\(request.requesterId)","displayName":"\(request.requesterName)"},
+          "payer": {"userId":"\(meUserId)","displayName":"\(state.displayName)"},
+          "splitId": \(jsonString(request.splitId)),
+          "splitTitle": \(jsonString(request.splitTitle)),
+          "paidAt": \(status == "PAID" ? jsonDate(paidAt) : "null"),
+          "declinedAt": \(status == "DECLINED" ? jsonDate(Date()) : "null"),
+          "lastRemindedAt": null,
+          "remindCount": 0,
+          "nextReminderAt": null
+        }
+        """
+    }
+
+    /// POST /payments { requestId }: pays the requester the requested amount, once.
+    static func payIncomingRequest(_ body: PayRequestBody) -> MockResponse {
+        guard let incoming = incomingFixtures.first(where: { $0.id == body.requestId }) else { return requestNotFound }
+        let status = incomingStatus(incoming)
+        guard status == "PENDING" else { return notPending(status) }
+        guard body.amountMinor == incoming.amountMinor else {
+            return .json(#"{"error":"request_amount_mismatch","message":"This request is for \#(Money(minor: incoming.amountMinor).formatted())."}"#, status: 400)
+        }
+        guard let person = people[incoming.requesterId] else { return requestNotFound }
+        let paidBefore = completedFixturePayees.contains(person.userId)
+            || state.createdPayments.contains { $0.payeeUserId == person.userId && $0.status() != "AUTHORIZING" }
+        let created = MockCreatedPayment(
+            id: "p_m\(state.createdPayments.count + 1)",
+            payeeUserId: person.userId,
+            payeeName: person.name,
+            amountMinor: incoming.amountMinor,
+            reference: incoming.reference,
+            createdAt: Date(),
+            requestId: incoming.id
+        )
+        state.createdPayments.append(created)
+        return createdPaymentResponse(created, person: person, paidBefore: paidBefore)
+    }
+
+    /// A resolved split: what the app's SplitDTO is built from.
+    struct ResolvedSplit {
+        let id: String
+        let title: String
+        let totalMinor: Int
+        let createdAt: Date
+        let shares: [MockShareState]
+    }
+
+    /// Splits Sam created this launch (newest first), then the fixture: Amara declined, Priya paid, Tom is open.
+    static func allSplits(now: Date = Date()) -> [ResolvedSplit] {
+        let created = state.createdSplits.reversed().map { split in
+            ResolvedSplit(
+                id: split.id,
+                title: split.title,
+                totalMinor: split.totalMinor,
+                createdAt: split.createdAt,
+                shares: split.shares.map { share in
+                    let paid = share.userId == "u_priya" && now.timeIntervalSince(split.createdAt) >= 5
+                    let reminder = state.reminders[share.requestId]
+                    return MockShareState(
+                        requestId: share.requestId,
+                        userId: share.userId,
+                        name: share.name,
+                        amountMinor: share.amountMinor,
+                        status: paid ? "PAID" : "PENDING",
+                        paidAt: paid ? split.createdAt.addingTimeInterval(5) : nil,
+                        declinedAt: nil,
+                        remindedAt: reminder?.at,
+                        remindCount: reminder?.count ?? 0
+                    )
+                }.sorted { $0.name < $1.name }
+            )
+        }
+        let tomReminder = state.reminders["req_503"] ?? MockReminder(at: now.addingTimeInterval(-30 * 3600), count: 1)
+        let fixture = ResolvedSplit(
+            id: "split_501",
+            title: "Flat cleaning supplies",
+            totalMinor: 4800,
+            createdAt: now.addingTimeInterval(-2 * 86400),
+            shares: [
+                MockShareState(requestId: "req_501", userId: "u_amara", name: "Amara Osei", amountMinor: 1200, status: "DECLINED", paidAt: nil, declinedAt: now.addingTimeInterval(-86400), remindedAt: nil, remindCount: 0),
+                MockShareState(requestId: "req_502", userId: "u_priya", name: "Priya Patel", amountMinor: 1200, status: "PAID", paidAt: now.addingTimeInterval(-86400), declinedAt: nil, remindedAt: nil, remindCount: 0),
+                MockShareState(requestId: "req_503", userId: "u_tom", name: "Tom Whitfield", amountMinor: 1200, status: "PENDING", paidAt: nil, declinedAt: nil, remindedAt: tomReminder.at, remindCount: tomReminder.count),
+            ]
+        )
+        return created + [fixture]
+    }
+
+    static func findShare(requestId: String) -> (ResolvedSplit, MockShareState)? {
+        for split in allSplits() {
+            if let share = split.shares.first(where: { $0.requestId == requestId }) { return (split, share) }
+        }
+        return nil
+    }
+
+    private static func remind(_ requestId: String) {
+        let previous = state.reminders[requestId]?.count ?? (requestId == "req_503" ? 1 : 0)
+        state.reminders[requestId] = MockReminder(at: Date(), count: previous + 1)
+    }
+
+    static func createSplit(_ body: CreateSplitRequest) -> MockResponse {
+        let title = body.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else {
+            return .json(#"{"error":"invalid_title","message":"Give it a title, like \u201CPizza night\u201D."}"#, status: 400)
+        }
+        guard !body.shares.isEmpty else {
+            return .json(#"{"error":"split_no_people","message":"Choose at least one person to ask."}"#, status: 400)
+        }
+        if body.shares.contains(where: { $0.amountMinor > 25000 }) {
+            return .json(#"{"error":"request_over_limit","message":"You can ask each person for up to £250, the most they can send in one payment."}"#, status: 400)
+        }
+        if body.shares.reduce(0, { $0 + $1.amountMinor }) > body.totalMinor {
+            return .json(#"{"error":"split_shares_exceed_total","message":"The shares add up to more than the total."}"#, status: 400)
+        }
+        let number = state.createdSplits.count + 1
+        var shares: [MockSplit.Share] = []
+        for (index, share) in body.shares.enumerated() {
+            guard let person = people[share.userId] else {
+                return .json(#"{"error":"payer_not_found","message":"We couldn't find one of those people on Quid."}"#, status: 404)
+            }
+            shares.append(MockSplit.Share(requestId: "req_m\(number)_\(index + 1)", userId: person.userId, name: person.name, amountMinor: share.amountMinor))
+        }
+        let split = MockSplit(id: "split_m\(number)", title: title, totalMinor: body.totalMinor, createdAt: Date(), shares: shares)
+        state.createdSplits.append(split)
+        guard let resolved = allSplits().first(where: { $0.id == split.id }) else { return splitNotFound }
+        return .json(splitJSON(resolved), status: 201)
+    }
+
+    static func splitJSON(_ split: ResolvedSplit) -> String {
+        let requested = split.shares.reduce(0) { $0 + $1.amountMinor }
+        let paid = split.shares.filter { $0.status == "PAID" }
+        let pending = split.shares.filter { $0.status == "PENDING" }.count
+        let shares = split.shares.map { share in
+            """
+            {"id":"share_\(share.requestId)","requestId":"\(share.requestId)","userId":"\(share.userId)","displayName":"\(share.name)","amountMinor":\(share.amountMinor),"status":"\(share.status)","paymentId":\(share.status == "PAID" ? "\"p_\(share.requestId)\"" : "null"),"paidAt":\(jsonDate(share.paidAt)),"declinedAt":\(jsonDate(share.declinedAt)),"lastRemindedAt":\(jsonDate(share.remindedAt)),"remindCount":\(share.remindCount),"nextReminderAt":\(jsonDate(share.nextReminderAt))}
+            """
+        }
+        return """
+        {
+          "id": "\(split.id)",
+          "title": "\(split.title)",
+          "totalMinor": \(split.totalMinor),
+          "createdAt": "\(ISO8601.string(from: split.createdAt))",
+          "creatorShareMinor": \(max(0, split.totalMinor - requested)),
+          "requestedMinor": \(requested),
+          "paidMinor": \(paid.reduce(0) { $0 + $1.amountMinor }),
+          "shareCount": \(split.shares.count),
+          "paidCount": \(paid.count),
+          "pendingCount": \(pending),
+          "isComplete": \(pending == 0),
+          "link": "https://quid.example/s/\(split.id)",
+          "shares": [\(shares.joined(separator: ","))]
+        }
+        """
+    }
+
+    /// One share as the request Sam sent, for GET /requests?role=outgoing and the nudge answer.
+    static func outgoingRequestJSON(_ share: MockShareState, split: ResolvedSplit) -> String {
         """
         {
-          "requests": [
-            {
-              "id": "req_301",
-              "requesterUserId": "u_priya",
-              "payerUserId": "\(meUserId)",
-              "amountMinor": 1800,
-              "reference": "Pizza night",
-              "note": "Friday pizza, split four ways",
-              "status": "PENDING",
-              "paymentId": null,
-              "expiresAt": "\(iso(daysAgo: -12))",
-              "createdAt": "\(iso(hoursAgo: 5))",
-              "requester": \(priya),
-              "splitTitle": "Pizza night"
-            },
-            {
-              "id": "req_302",
-              "requesterUserId": "u_tom",
-              "payerUserId": "\(meUserId)",
-              "amountMinor": 1125,
-              "reference": "Flat Wi-Fi",
-              "note": null,
-              "status": "PENDING",
-              "paymentId": null,
-              "expiresAt": "\(iso(daysAgo: -9))",
-              "createdAt": "\(iso(daysAgo: 2, hour: 10))",
-              "requester": \(tom),
-              "splitTitle": null
-            }
-          ]
+          "id": "\(share.requestId)",
+          "requesterUserId": "\(meUserId)",
+          "payerUserId": "\(share.userId)",
+          "amountMinor": \(share.amountMinor),
+          "reference": "\(String(split.title.prefix(18)))",
+          "note": null,
+          "status": "\(share.status)",
+          "paymentId": null,
+          "expiresAt": "\(ISO8601.string(from: split.createdAt.addingTimeInterval(14 * 86400)))",
+          "createdAt": "\(ISO8601.string(from: split.createdAt))",
+          "requester": {"userId":"\(meUserId)","displayName":"\(state.displayName)"},
+          "payer": {"userId":"\(share.userId)","displayName":"\(share.name)"},
+          "splitId": "\(split.id)",
+          "splitTitle": "\(split.title)",
+          "paidAt": \(jsonDate(share.paidAt)),
+          "declinedAt": \(jsonDate(share.declinedAt)),
+          "lastRemindedAt": \(jsonDate(share.remindedAt)),
+          "remindCount": \(share.remindCount),
+          "nextReminderAt": \(jsonDate(share.nextReminderAt))
         }
         """
     }
@@ -509,6 +862,11 @@ enum MockFixtures {
     private static func jsonString(_ value: String?) -> String {
         guard let value else { return "null" }
         return "\"\(value)\""
+    }
+
+    private static func jsonDate(_ value: Date?) -> String {
+        guard let value else { return "null" }
+        return "\"\(ISO8601.string(from: value))\""
     }
 
     static func iso(minutesAgo: Int) -> String {

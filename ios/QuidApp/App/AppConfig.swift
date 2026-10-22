@@ -21,8 +21,6 @@ enum AppConfig {
     // Placeholder legal pages until real ones exist (docs/DECISIONS.md).
     static let privacyURL = URL(string: "https://quid.example/privacy")!
     static let termsURL = URL(string: "https://quid.example/terms")!
-    /// Shared with contacts who are not on Quid yet; real invite links arrive in Phase 3.
-    static let inviteURL = URL(string: "https://quid.example/invite")!
 
     // MARK: Payments
 

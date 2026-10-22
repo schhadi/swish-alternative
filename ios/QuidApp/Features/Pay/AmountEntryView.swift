@@ -16,8 +16,12 @@ struct AmountEntryView: View {
                         QuidErrorLine(message: message)
                             .padding(.horizontal, 4)
                     }
-                    quickAmounts
-                    referenceField
+                    if viewModel.isPayingRequest {
+                        requestDetails
+                    } else {
+                        quickAmounts
+                        referenceField
+                    }
                     payFromRow
                 }
                 .padding(.horizontal, 20)
@@ -25,7 +29,7 @@ struct AmountEntryView: View {
                 .padding(.bottom, 12)
             }
             .scrollDismissesKeyboard(.interactively)
-            if !referenceFocused {
+            if !referenceFocused && !viewModel.isPayingRequest {
                 AmountKeypad { key in viewModel.press(key) }
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
@@ -45,7 +49,7 @@ struct AmountEntryView: View {
             .padding(.bottom, 8)
             .background(Color.quidBackground)
         }
-        .navigationTitle("Pay")
+        .navigationTitle(viewModel.isPayingRequest ? "Pay request" : "Pay")
         .navigationBarTitleDisplayMode(.inline)
         .animation(.easeOut(duration: 0.2), value: referenceFocused)
         .onChange(of: viewModel.inlineMessage) {
@@ -62,7 +66,11 @@ struct AmountEntryView: View {
                     Text("To \(target.displayName)")
                         .font(.quidHeadline)
                         .foregroundStyle(Color.quidInk)
-                    if let bank = target.bankName {
+                    if let request = viewModel.request {
+                        Text("Asked you for \(Money(minor: request.amountMinor).formatted())")
+                            .font(.quidFootnote)
+                            .foregroundStyle(Color.quidMuted)
+                    } else if let bank = target.bankName {
                         Text("\(bank) · verified with their bank")
                             .font(.quidFootnote)
                             .foregroundStyle(Color.quidMuted)
@@ -120,6 +128,27 @@ struct AmountEntryView: View {
                 .quidField(isHighlighted: referenceFocused)
                 .accessibilityLabel("Reference, shows on both bank statements")
                 .accessibilityIdentifier("pay.reference")
+        }
+    }
+
+    /// Paying a request: what it is for and the reference it sets, neither of which can be changed here.
+    @ViewBuilder
+    private var requestDetails: some View {
+        if let request = viewModel.request {
+            QuidCard(padding: 0) {
+                VStack(spacing: 0) {
+                    DetailRow(label: "For", value: request.title)
+                    if let note = request.note, !note.isEmpty {
+                        QuidDivider().padding(.leading, 16)
+                        DetailRow(label: "Note", value: note)
+                    }
+                    QuidDivider().padding(.leading, 16)
+                    DetailRow(label: "Reference", value: request.reference)
+                    QuidDivider().padding(.leading, 16)
+                    DetailRow(label: "Expires", value: request.expiresAt.formatted(.dateTime.day().month(.abbreviated)))
+                }
+            }
+            .accessibilityIdentifier("pay.requestDetails")
         }
     }
 

@@ -3,9 +3,10 @@ import SwiftUI
 /// Greeting + linked bank, two big buttons, recent contacts, activity. Nav bar hidden; the greeting is the title.
 struct HomeView: View {
     @State private var viewModel: HomeViewModel
-    @State private var placeholder: PhasePlaceholder?
     @State private var showBankSheet = false
     @State private var payPresentation: PayPresentation?
+    @State private var showRequestFlow = false
+    @State private var declining: PaymentRequestDTO?
     @Environment(AppEnvironment.self) private var appEnvironment
     @ScaledMetric(relativeTo: .footnote) private var contactTileWidth: CGFloat = 72
     let showActivity: () -> Void
@@ -43,31 +44,53 @@ struct HomeView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
         }
-        .sheet(item: $placeholder) { PhasePlaceholderSheet(placeholder: $0) }
         .sheet(isPresented: $showBankSheet) {
             BankLinkSheet(api: appEnvironment.api) { await viewModel.load() }
                 .environment(appEnvironment)
         }
         .fullScreenCover(item: $payPresentation) { presentation in
-            PayFlowView(environment: appEnvironment, target: presentation.target) { await viewModel.load() }
+            PayFlowView(environment: appEnvironment, target: presentation.target, request: presentation.request) { await viewModel.load() }
                 .environment(appEnvironment)
+        }
+        .fullScreenCover(isPresented: $showRequestFlow) {
+            RequestFlowView(environment: appEnvironment) { await viewModel.load() }
+                .environment(appEnvironment)
+        }
+        .confirmationDialog(
+            declining.map(IncomingRequestViewModel.declineQuestion(for:)) ?? "Decline request?",
+            isPresented: Binding(get: { declining != nil }, set: { if !$0 { declining = nil } }),
+            titleVisibility: .visible,
+            presenting: declining
+        ) { request in
+            Button("Decline request", role: .destructive) {
+                Task { await viewModel.decline(request) }
+            }
+        } message: { _ in
+            Text(IncomingRequestViewModel.declineExplanation)
         }
     }
 
-    /// Pay opens the picker; a recent contact goes straight to the amount screen.
+    /// Pay opens the picker; a recent contact goes straight to the amount screen; a request opens it prefilled.
     private enum PayPresentation: Identifiable {
         case pick
         case target(PayTarget)
+        case request(PaymentRequestDTO)
 
         var id: String {
             switch self {
             case .pick: return "pick"
             case .target(let target): return target.userId
+            case .request(let request): return "request-\(request.id)"
             }
         }
 
         var target: PayTarget? {
             if case .target(let target) = self { return target }
+            return nil
+        }
+
+        var request: PaymentRequestDTO? {
+            if case .request(let request) = self { return request }
             return nil
         }
     }
@@ -167,8 +190,9 @@ struct HomeView: View {
             }
             .accessibilityIdentifier("home.pay")
             QuidButton(title: "Request", systemImage: "arrow.down.left", style: .secondary) {
-                placeholder = .request
+                showRequestFlow = true
             }
+            .accessibilityIdentifier("home.request")
         }
     }
 
@@ -180,9 +204,13 @@ struct HomeView: View {
             ForEach(viewModel.incomingRequests) { request in
                 IncomingRequestCard(
                     request: request,
-                    onPay: { placeholder = .payRequest },
-                    onDecline: { placeholder = .declineRequest }
+                    isDeclining: viewModel.decliningIds.contains(request.id),
+                    onPay: { payPresentation = .request(request) },
+                    onDecline: { declining = request }
                 )
+            }
+            if let message = viewModel.requestError {
+                QuidErrorLine(message: message)
             }
         }
     }
@@ -293,9 +321,10 @@ struct HomeView: View {
     }
 }
 
-/// A request addressed to me: Pay prefills the Pay flow, Decline declines it (both Phase 3).
+/// A request addressed to me: Pay prefills the Pay flow, Decline asks first and then declines it.
 struct IncomingRequestCard: View {
     let request: PaymentRequestDTO
+    var isDeclining = false
     let onPay: () -> Void
     let onDecline: () -> Void
 
@@ -316,7 +345,12 @@ struct IncomingRequestCard: View {
                 }
                 HStack(spacing: 10) {
                     QuidPillButton(title: "Pay \(Money(minor: request.amountMinor).formatted(compact: true))", action: onPay)
+                        .accessibilityLabel("Pay \(request.requester.displayName) \(Money(minor: request.amountMinor).formatted())")
+                        .accessibilityIdentifier("home.request.pay.\(request.id)")
                     QuidPillButton(title: "Decline", style: .neutral, action: onDecline)
+                        .disabled(isDeclining)
+                        .accessibilityLabel("Decline \(request.requester.displayName)'s request")
+                        .accessibilityIdentifier("home.request.decline.\(request.id)")
                     Spacer()
                 }
             }
