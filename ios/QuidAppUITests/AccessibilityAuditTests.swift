@@ -45,7 +45,7 @@ final class AccessibilityAuditTests: XCTestCase {
         let split = app.buttons["activity.split.split_501"]
         if scrollTo(split, in: app) {
             split.tap()
-            XCTAssertTrue(app.descendants(matching: .any)["split.progress"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.descendants(matching: .any)["split.share.u_tom"].waitForExistence(timeout: 10))
             try auditor.audit("split detail")
             goBack(in: app)
         } else {
@@ -59,7 +59,7 @@ final class AccessibilityAuditTests: XCTestCase {
         try auditor.audit("collect")
         if scrollTo(collection, in: app) {
             collection.tap()
-            XCTAssertTrue(app.descendants(matching: .any)["collection.progress"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.buttons["collection.showQR"].waitForExistence(timeout: 10))
             try auditor.audit("collection detail")
             goBack(in: app)
         }

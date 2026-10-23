@@ -30,6 +30,8 @@ struct LimitsDTO: Codable, Hashable, Sendable {
     let perPaymentMinor: Int
     let rolling24hMinor: Int
     let rolling30dMinor: Int
+    /// New people one payer can start paying a day (Phase 5). Optional so an older server still decodes.
+    var newPayeesPer24h: Int? = nil
 }
 
 struct MeDTO: Codable, Hashable, Sendable {

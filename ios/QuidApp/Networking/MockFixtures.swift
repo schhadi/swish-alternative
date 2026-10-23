@@ -583,7 +583,8 @@ enum MockFixtures {
           "limits": {
             "perPaymentMinor": 25000,
             "rolling24hMinor": 50000,
-            "rolling30dMinor": 200000
+            "rolling30dMinor": 200000,
+            "newPayeesPer24h": 10
           }
         }
         """

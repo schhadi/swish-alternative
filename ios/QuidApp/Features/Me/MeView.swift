@@ -169,6 +169,10 @@ struct MeView: View {
                     MeRow(systemImage: "sun.max", title: "Per 24 hours", value: limits.map { Money(minor: $0.rolling24hMinor).formatted(compact: true) })
                     QuidDivider().padding(.leading, 58)
                     MeRow(systemImage: "calendar", title: "Per 30 days", value: limits.map { Money(minor: $0.rolling30dMinor).formatted(compact: true) })
+                    if let newPayees = limits?.newPayeesPer24h {
+                        QuidDivider().padding(.leading, 58)
+                        MeRow(systemImage: "person.badge.plus", title: "New people a day", value: String(newPayees))
+                    }
                 }
                 .redacted(reason: showsPlaceholders ? .placeholder : [])
             }
