@@ -2,24 +2,25 @@
 // Run with: PAYMENT_PROVIDER=truelayer npm run smoke   (needs the TRUELAYER_* values in backend/.env)
 // Beneficiary comes from SMOKE_SORT_CODE / SMOKE_ACCOUNT_NUMBER / SMOKE_ACCOUNT_HOLDER_NAME; use the sandbox test
 // account from docs.truelayer.com (not verified from here; see docs/DECISIONS.md #59).
-import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { env, truelayerHosts } from "../config.js";
+import { env, truelayerHosts, truelayerPrivateKeyPem } from "../config.js";
 import { TrueLayerClient } from "../services/truelayer/client.js";
 
 async function main(): Promise<void> {
   if (env.PAYMENT_PROVIDER !== "truelayer") {
     throw new Error("Set PAYMENT_PROVIDER=truelayer and the TRUELAYER_* values in backend/.env first");
   }
-  const missing = (["TRUELAYER_CLIENT_ID", "TRUELAYER_CLIENT_SECRET", "TRUELAYER_KID", "TRUELAYER_PRIVATE_KEY_PATH"] as const).filter((key) => !env[key]);
-  if (missing.length > 0) throw new Error(`Missing ${missing.join(", ")}`);
+  const missing: string[] = (["TRUELAYER_CLIENT_ID", "TRUELAYER_CLIENT_SECRET", "TRUELAYER_KID"] as const).filter((key) => !env[key]);
+  const privateKeyPem = truelayerPrivateKeyPem();
+  if (!privateKeyPem) missing.push("TRUELAYER_PRIVATE_KEY or TRUELAYER_PRIVATE_KEY_PATH");
+  if (missing.length > 0 || !privateKeyPem) throw new Error(`Missing ${missing.join(", ")}`);
   const hosts = truelayerHosts();
   const client = new TrueLayerClient({
     ...hosts,
     clientId: env.TRUELAYER_CLIENT_ID as string,
     clientSecret: env.TRUELAYER_CLIENT_SECRET as string,
     kid: env.TRUELAYER_KID as string,
-    privateKeyPem: readFileSync(env.TRUELAYER_PRIVATE_KEY_PATH as string, "utf8"),
+    privateKeyPem,
   });
 
   const paymentId = randomUUID();

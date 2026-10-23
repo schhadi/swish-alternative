@@ -114,4 +114,11 @@ final class APIClientTests: XCTestCase {
             XCTFail("Expected AppError, got \(error)", file: file, line: line)
         }
     }
+
+    func testTheBackendAddressComesFromTheSchemeThenInfoPlistThenLocalhost() {
+        XCTAssertEqual(AppConfig.apiBaseURL(environment: "https://abc.ngrok.app", infoPlist: "https://quid-sandbox.fly.dev").absoluteString, "https://abc.ngrok.app")
+        XCTAssertEqual(AppConfig.apiBaseURL(environment: nil, infoPlist: "https://quid-sandbox.fly.dev").absoluteString, "https://quid-sandbox.fly.dev")
+        XCTAssertEqual(AppConfig.apiBaseURL(environment: " ", infoPlist: "").absoluteString, "http://localhost:3000")
+        XCTAssertEqual(AppConfig.apiBaseURL(environment: nil, infoPlist: "not a url").absoluteString, "http://localhost:3000")
+    }
 }

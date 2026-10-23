@@ -8,7 +8,7 @@ export default defineConfig({
     fileParallelism: false,
     globalSetup: ["./test/global-setup.ts"],
     // Test-only environment. The SQLite file lives next to prisma/schema.prisma. CI's Postgres job sets
-    // QUID_TEST_DATABASE_URL (with the schema's provider switched to postgresql) to run the same suite there.
+    // QUID_TEST_DATABASE_URL (after scripts/use-postgres.sh) to run the same suite there.
     env: {
       NODE_ENV: "test",
       LOG_LEVEL: "silent",

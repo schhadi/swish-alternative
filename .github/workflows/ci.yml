@@ -26,8 +26,8 @@ jobs:
   backend-postgres:
     name: Backend · npm test on Postgres
     runs-on: ubuntu-latest
-    # The schema must run on Postgres unchanged except for the provider line (docs/DECISIONS.md #1); this runs the
-    # whole suite there. The migrations are SQLite's, so the schema is pushed (test/global-setup.ts).
+    # The schema must run on Postgres unchanged except for the provider line (docs/DECISIONS.md #1). This applies the
+    # Postgres migration history, fails if it no longer matches the schema, then runs the whole suite there.
     services:
       postgres:
         image: postgres:16
@@ -55,11 +55,15 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
-      - name: Switch the datasource to Postgres
+      - name: Switch to Postgres
         run: |
-          sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma
-          grep -q 'provider = "postgresql"' prisma/schema.prisma
+          sh scripts/use-postgres.sh
           npx prisma generate
+      - name: Postgres migrations match the schema
+        run: |
+          DATABASE_URL="$QUID_TEST_DATABASE_URL" npx prisma migrate deploy
+          # Exit code 2 means the schema changed without a matching migration in prisma/migrations-postgres.
+          DATABASE_URL="$QUID_TEST_DATABASE_URL" npx prisma migrate diff --from-url "$QUID_TEST_DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
       - run: npm test
 
   ios:

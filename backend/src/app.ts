@@ -1,11 +1,10 @@
 import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
-import { env, truelayerHosts } from "./config.js";
+import { env, truelayerHosts, truelayerPrivateKeyPem } from "./config.js";
 import { HttpError } from "./lib/errors.js";
 import { loggerOptions } from "./lib/logger.js";
 import { LIMITS } from "./limits.js";
-import { readFileSync } from "node:fs";
 import { authRoutes } from "./routes/auth.js";
 import { collectPageRoutes } from "./routes/collectPage.js";
 import { devRoutes } from "./routes/dev.js";
@@ -56,8 +55,10 @@ export interface BuildAppOptions {
 
 /** PAYMENT_PROVIDER=truelayer needs the Console credentials and the signing key; fail at startup, not at the first payment. */
 function buildTrueLayerClient(): TrueLayerClient {
-  const missing = (["TRUELAYER_CLIENT_ID", "TRUELAYER_CLIENT_SECRET", "TRUELAYER_KID", "TRUELAYER_PRIVATE_KEY_PATH"] as const).filter((key) => !env[key]);
-  if (missing.length > 0) {
+  const missing: string[] = (["TRUELAYER_CLIENT_ID", "TRUELAYER_CLIENT_SECRET", "TRUELAYER_KID"] as const).filter((key) => !env[key]);
+  const privateKeyPem = truelayerPrivateKeyPem();
+  if (!privateKeyPem) missing.push("TRUELAYER_PRIVATE_KEY or TRUELAYER_PRIVATE_KEY_PATH");
+  if (missing.length > 0 || !privateKeyPem) {
     throw new Error(`PAYMENT_PROVIDER=truelayer needs ${missing.join(", ")} in backend/.env`);
   }
   const hosts = truelayerHosts();
@@ -68,7 +69,7 @@ function buildTrueLayerClient(): TrueLayerClient {
     clientId: env.TRUELAYER_CLIENT_ID as string,
     clientSecret: env.TRUELAYER_CLIENT_SECRET as string,
     kid: env.TRUELAYER_KID as string,
-    privateKeyPem: readFileSync(env.TRUELAYER_PRIVATE_KEY_PATH as string, "utf8"),
+    privateKeyPem,
   });
 }
 

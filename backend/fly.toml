@@ -1,0 +1,54 @@
+# Quid backend: the hosted sandbox on Fly.io (docs/RUNBOOK.md, "Hosting the sandbox on Fly.io").
+# Deploy from this folder with `fly deploy --ha=false`. Rename `app` to the name you created.
+#
+# Exactly one Machine: the payer locks, rate-limit counters, the fallback poll and the hourly sweep all live in the
+# process (docs/RUNBOOK.md, go-live checklist). Never scale this app above one.
+
+app = "quid-sandbox"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  # Applies the Postgres migrations (prisma/migrations-postgres) before the new release starts.
+  release_command = "node node_modules/prisma/build/index.js migrate deploy"
+  # One Machine is replaced, never run beside another.
+  strategy = "rolling"
+
+[env]
+  # A private sandbox, not production: NODE_ENV=production refuses to start with the dev stand-ins below.
+  NODE_ENV = "development"
+  HOST = "0.0.0.0"
+  PORT = "3000"
+  LOG_LEVEL = "info"
+  # Fly's proxy is the one hop in front of the app; the client address is the last X-Forwarded-For entry.
+  TRUST_PROXY = "1"
+  PUBLIC_BASE_URL = "https://quid-sandbox.fly.dev"
+  # One-time codes are written to the log (read them with `fly logs`); bank-account checks are faked.
+  SMS_SENDER = "log"
+  COP_VERIFIER = "fake"
+  # "fake" runs the whole flow with the built-in fake bank page; "truelayer" uses the TrueLayer sandbox
+  # (then also set the TRUELAYER_* secrets).
+  PAYMENT_PROVIDER = "fake"
+  TRUELAYER_ENV = "sandbox"
+  PAYMENT_RETURN_URI = "quid://return/payment"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Always on: the fallback poll and sweeps need the process running.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

@@ -1,11 +1,20 @@
 import Foundation
 
 enum AppConfig {
-    /// Backend base URL. Override with the QUID_API_BASE_URL environment variable in the scheme
-    /// (for example an ngrok URL when running on a physical device).
+    /// Backend base URL. A scheme's QUID_API_BASE_URL environment variable wins, but only applies when Xcode launches
+    /// the app; an installed build (a phone, TestFlight) reads the QuidAPIBaseURL key in Info.plist, for example the
+    /// Fly.io sandbox (docs/RUNBOOK.md). Neither set: http://localhost:3000.
     static var apiBaseURL: URL {
-        if let override = ProcessInfo.processInfo.environment["QUID_API_BASE_URL"], let url = URL(string: override) {
-            return url
+        apiBaseURL(
+            environment: ProcessInfo.processInfo.environment["QUID_API_BASE_URL"],
+            infoPlist: Bundle.main.object(forInfoDictionaryKey: "QuidAPIBaseURL") as? String
+        )
+    }
+
+    static func apiBaseURL(environment: String?, infoPlist: String?) -> URL {
+        for candidate in [environment, infoPlist] {
+            let trimmed = candidate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !trimmed.isEmpty, let url = URL(string: trimmed), url.scheme != nil { return url }
         }
         return URL(string: "http://localhost:3000")!
     }

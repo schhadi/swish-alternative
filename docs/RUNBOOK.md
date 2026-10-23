@@ -24,6 +24,7 @@ If step 6 fails, the error names the call that TrueLayer refused; every request 
 - Xcode 16 or later with an iOS 17+ simulator
 - (Phase 2) ngrok account, TrueLayer Console account
 - (optional) Postgres 16, to run the backend tests the way CI's Postgres job does
+- (hosting) a Fly.io account and `flyctl`, for the hosted sandbox
 
 ## Backend
 
@@ -57,6 +58,22 @@ Environment variables are validated at startup by `src/config.ts`; a missing or 
 3. Pick **QuidApp** to use the backend at `http://localhost:3000`. On a physical device set `QUID_API_BASE_URL` (Edit Scheme → Run → Arguments → Environment) to a reachable URL such as an ngrok tunnel. Behind ngrok (or any proxy) set `TRUST_PROXY=1` in `backend/.env`, otherwise every phone shares one per-IP rate-limit bucket.
 
 MockMode is on when any of these is true: `-mock` launch argument, `QUID_MOCK=1` in the environment, or running in an Xcode preview. Canned responses are in `QuidApp/Networking/MockFixtures.swift`.
+
+The app finds the backend in this order: the scheme's `QUID_API_BASE_URL` (only when Xcode launches the app), then the `QuidAPIBaseURL` key in `QuidApp/Info.plist` (what an installed build uses, for example the Fly.io sandbox), then `http://localhost:3000`.
+
+### Run the demo on your iPhone
+
+The demo needs no backend: it answers every request inside the app.
+
+1. An iPhone on iOS 17 or later, connected to the Mac with a cable (Wi-Fi works after the first time).
+2. Xcode → Settings → Accounts → + → Apple ID. A free Apple ID is enough.
+3. Open `ios/QuidApp.xcodeproj`, select the **QuidApp** target → Signing & Capabilities: tick "Automatically manage signing", choose your Personal Team, and change the Bundle Identifier to one only you use, such as `com.yourname.quid` (`com.quid.app` is a placeholder someone else may hold). Keep these two changes out of commits.
+4. On the iPhone, turn on Developer Mode when it asks: Settings → Privacy & Security → Developer Mode, then restart it.
+5. In Xcode choose the **QuidApp-Mock** scheme and your iPhone as the run destination, and press ⌘R.
+6. First run only: if the iPhone says the developer isn't trusted, open Settings → General → VPN & Device Management → your Apple ID → Trust, then press ⌘R again.
+7. The app stays on the phone. Launched from Xcode it opens straight into the demo; opened from the Home Screen it shows the welcome screen, where **Explore the demo** switches to it.
+
+With a free Apple ID the installed app stops opening after 7 days; run it from Xcode again. Sharing it with other people needs a paid Apple Developer account and TestFlight. To use the hosted sandbox instead of the demo, set `QuidAPIBaseURL` (target → Info) to its https address, run the **QuidApp** scheme, and sign in with your own number; the code is in `fly logs`.
 
 Tests: Product → Test, or `scripts/ios-test.sh "iPhone 16"`.
 
@@ -141,12 +158,27 @@ MockMode (`-mock`): Collect shows SOAS Hockey Club with Trip deposit (7 of 12 pa
 5. Accessibility audit: `AccessibilityAuditTests` (UI tests) runs Xcode's audit over Home, Activity, a split, Collect, a collection, Me, the pay flow and its result, and the request picker, in light, dark and the largest text size. Each finding prints an `AXAUDIT|…` line; CI collects them under "Accessibility audit findings".
 6. Universal links: with `APPLE_APP_IDS` set, `GET /.well-known/apple-app-site-association` claims `/s/*` so a split's shared link opens the app. Turning it on in the app is in the go-live checklist.
 
+## Hosting the sandbox on Fly.io
+
+A private test server in London: one always-on machine and Managed Postgres, with one-time codes written to the log and bank-account checks faked, so it must not be given to real users (they need the go-live checklist). Everything it needs is in `backend/Dockerfile` and `backend/fly.toml`; the image switches itself to Postgres (`backend/scripts/use-postgres.sh`).
+
+1. Install flyctl (https://fly.io/docs/flyctl/install/) and sign in: `fly auth login`.
+2. Create the app. The name becomes its address, `https://<name>.fly.dev`: `fly apps create quid-sandbox`. If the name is taken, pick another and change `app` and `PUBLIC_BASE_URL` in `backend/fly.toml` to match.
+3. Database: `fly mpg create --name quid-sandbox-db --region lhr --plan basic`. In the cluster's Connect tab on the Fly dashboard, copy the **direct** connection string and store it: `fly secrets set --stage -a quid-sandbox DATABASE_URL='postgresql://…'`. Prisma's migrations need the direct connection; `fly mpg attach` would set the pooled (PgBouncer) one instead.
+4. Keys: `fly secrets set --stage -a quid-sandbox PHONE_HASH_PEPPER=$(openssl rand -hex 32) BANK_DATA_KEY=$(openssl rand -hex 32)`. Keep a copy of both somewhere safe: without the bank key, stored bank details can't be read, and a new pepper breaks every contact match.
+5. Deploy: `cd backend && fly deploy --ha=false`. The release step applies the Postgres migrations before the new version starts. `https://quid-sandbox.fly.dev/health` should answer `"db":"ok"`. Keep exactly one machine (`fly scale count 1` if a second ever appears).
+6. Demo data (optional): `fly ssh console -a quid-sandbox -C "node dist/scripts/seed.js"`.
+7. Sign in from the app (see "Run the demo on your iPhone" for pointing it at the sandbox): the one-time code is in `fly logs -a quid-sandbox`, on the line `SMS not sent (SMS_SENDER=log)`.
+8. TrueLayer sandbox (optional; the fake bank page works without it): set `PAYMENT_PROVIDER = "truelayer"` in `backend/fly.toml`, store the Console values with `fly secrets set --stage -a quid-sandbox TRUELAYER_CLIENT_ID=… TRUELAYER_CLIENT_SECRET=… TRUELAYER_KID=… TRUELAYER_PRIVATE_KEY="$(cat secrets/truelayer-private-key.pem)"`, deploy again, and register `https://quid-sandbox.fly.dev/webhooks/truelayer` as the webhook URL and `https://quid-sandbox.fly.dev/c/return` as a redirect URI in the Console. No ngrok is needed once the sandbox is hosted.
+
+Each schema change needs a migration in both histories: `npm run db:migrate` for SQLite, and a Postgres one in `backend/prisma/migrations-postgres` (generate its SQL with `npx prisma migrate diff` against the previous state). CI's Postgres job applies that history and fails if it no longer matches the schema.
+
 ## CI
 
 `.github/workflows/ci.yml` has three jobs:
 
 - **Backend · npm test**: Ubuntu, `npm ci`, typecheck, build, test on SQLite.
-- **Backend · npm test on Postgres**: a Postgres 16 service, the schema's provider switched to `postgresql`, the schema pushed (`prisma db push`), and the whole suite run against it.
+- **Backend · npm test on Postgres**: a Postgres 16 service, `scripts/use-postgres.sh` (provider and migration history switched), the Postgres migrations applied and checked against the schema (`prisma migrate diff --exit-code`), and the whole suite run against it.
 - **iOS · xcodebuild test**: `macos-15` with the newest Xcode 16 and the newest plain-numbered iPhone simulator, `xcodebuild test` for the `QuidApp` scheme (unit and UI tests, including the accessibility audit). The raw log is uploaded as an artifact. A crashing test host fails the job even when xcodebuild exits 0 (it otherwise relaunches the host and reports the survivors as passed); on failure the job prints the newest `QuidApp` crash reports and the app's simulator log lines. UI tests print the screen's accessibility hierarchy when an element never appears, and the job shows it.
 
 ## Secrets
@@ -161,11 +193,11 @@ MockMode (`-mock`): Collect shows SOAS Hockey Club with Trip deposit (7 of 12 pa
 
 - [ ] Every item in docs/DECISIONS.md #59 confirmed in the sandbox (token endpoint, request and response field names, status vocabulary, hosted payment page URL and its `payment_id` return, Idempotency-Key replay, cancel body, GB provider ids). Fix `backend/src/services/truelayer/client.ts` and `backend/src/services/providers.ts` where they differ.
 - [ ] Live Console application approved by TrueLayer, with its own client id and secret (no `sandbox-` prefix): `TRUELAYER_CLIENT_ID`, `TRUELAYER_CLIENT_SECRET`.
-- [ ] A new ES512 signing key pair for live (never reuse the sandbox key): public key uploaded in the live Console, `TRUELAYER_KID`, private key at `TRUELAYER_PRIVATE_KEY_PATH`, held in the host's secret store.
+- [ ] A new ES512 signing key pair for live (never reuse the sandbox key): public key uploaded in the live Console, `TRUELAYER_KID`, and the private key in the host's secret store as `TRUELAYER_PRIVATE_KEY` (or a file at `TRUELAYER_PRIVATE_KEY_PATH`).
 - [ ] `TRUELAYER_ENV=live`. The hosts then default to `api.truelayer.com`, `auth.truelayer.com`, `payment.truelayer.com` and the webhook key set at `webhooks.truelayer.com` (`backend/src/config.ts`, `truelayerHosts()`); confirm each against the docs, or set the `TRUELAYER_*_BASE_URL` overrides.
 - [ ] Redirect URIs allowed in the live Console: `PAYMENT_RETURN_URI` (`quid://return/payment`, or an https universal link if TrueLayer recommends one for live) and `<PUBLIC_BASE_URL>/c/return` for people paying a collection link in a browser.
 - [ ] Webhook URL in the live Console: `<PUBLIC_BASE_URL>/webhooks/truelayer`. Deliveries whose `jku` is not the live JWKS URL are refused with 403.
-- [ ] iOS: the SDK environment and API base URL become build settings. Today `AppConfig` reads `QUID_TRUELAYER_ENV` and `QUID_API_BASE_URL` from the scheme's environment, which a TestFlight or App Store build doesn't have, so a release build would use the sandbox and `localhost:3000`. Move both to Info.plist keys set per build configuration.
+- [ ] iOS: set `QuidAPIBaseURL` in Info.plist to the live API address (an installed build reads it; the scheme's `QUID_API_BASE_URL` only applies under Xcode), and move the SDK environment the same way: `AppConfig` still reads `QUID_TRUELAYER_ENV` from the scheme only, so a release build would use TrueLayer's sandbox.
 
 ### Confirmation of Payee and SMS
 
@@ -186,7 +218,7 @@ MockMode (`-mock`): Collect shows SOAS Hockey Club with Trip deposit (7 of 12 pa
 ### Keys and data
 
 - [ ] `PHONE_HASH_PEPPER` and `BANK_DATA_KEY`: fresh 32-byte values from `openssl rand -hex 32`, in the host's secret store, backed up. Losing the bank key loses every stored account; changing the pepper breaks every contact match.
-- [ ] Postgres: change `provider` in `backend/prisma/schema.prisma` to `postgresql` (CI already runs every test on Postgres 16). The committed migrations are SQLite SQL, so start a Postgres migration history from the schema (`npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script` into a new baseline migration) and use `prisma migrate deploy` from then on. Automated backups.
+- [ ] Postgres: the image already runs on it (`scripts/use-postgres.sh`, the `prisma/migrations-postgres` history, applied by the release step) and CI runs every test there. Turn on automated backups and point-in-time recovery for the live database.
 - [ ] Run exactly one backend instance. The per-payer lock that serialises the limits check, the per-collection settlement lock, the rate-limit counters, the fallback poll and the hourly request sweep all live in the process. Before scaling out: move the two locks into Postgres (`pg_advisory_xact_lock` around the check and insert), the rate limiter to a shared store, and the poll and sweep to a single worker.
 - [ ] Logs: JSON (`LOG_PRETTY` unset), `LOG_LEVEL=info`, shipped somewhere with retention. They never contain account numbers, phone numbers or tokens; payment transitions and `payee_name_disclosed` audit lines carry ids only.
 

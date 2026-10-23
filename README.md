@@ -51,6 +51,10 @@ Open `ios/QuidApp.xcodeproj` in Xcode 16 or later (iOS 17 simulator).
 
 Tests: product → Test in Xcode, or `scripts/ios-test.sh`. Unit tests cover money formatting, date grouping, the API client's error mapping (via the same `MockURLProtocol` MockMode uses), every ViewModel and the contrast of every colour pair in light and dark. XCUITests run in MockMode: onboarding, paying (including the first-time warning and a declined payment), requesting, paying a request, creating a collection, and Xcode's accessibility audit over the main screens in light, dark and the largest text size.
 
+### Hosting
+
+The sandbox backend runs on Fly.io in London (one machine, Managed Postgres) from `backend/Dockerfile` and `backend/fly.toml`; `docs/RUNBOOK.md` has the steps, and how to run the demo on an iPhone.
+
 ### CI
 
 `.github/workflows/ci.yml` runs `npm test` (plus typecheck and build) on Ubuntu against SQLite, the same suite against Postgres 16, and `xcodebuild test` on a macOS runner with an iPhone simulator.

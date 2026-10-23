@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { z } from "zod";
 
 // Load backend/.env if present (Node >= 20.12). Missing file is fine: CI and prod set real env vars.
@@ -51,6 +52,9 @@ const EnvSchema = z.object({
   TRUELAYER_CLIENT_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
   TRUELAYER_KID: z.preprocess(emptyToUndefined, z.string().optional()),
   TRUELAYER_PRIVATE_KEY_PATH: z.preprocess(emptyToUndefined, z.string().optional()),
+  // The signing key itself, for hosts that keep secrets as environment variables (Fly.io); "\n" escapes are allowed.
+  // Takes precedence over TRUELAYER_PRIVATE_KEY_PATH.
+  TRUELAYER_PRIVATE_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
   // "fake" is an in-process stand-in with a dev approval page (no credentials, no sandbox); refused in production.
   PAYMENT_PROVIDER: z.enum(["fake", "truelayer"]).default("fake"),
   // Hosts default per TRUELAYER_ENV in truelayerHosts() below; override only if TrueLayer's docs say otherwise.
@@ -117,6 +121,13 @@ export function truelayerHosts(config: Pick<Env, "TRUELAYER_ENV" | "TRUELAYER_AP
       ? ["https://webhooks.truelayer-sandbox.com/.well-known/jwks"]
       : ["https://webhooks.truelayer.com/.well-known/jwks"],
   };
+}
+
+/** The TrueLayer signing key (PEM): TRUELAYER_PRIVATE_KEY if set, else the file at TRUELAYER_PRIVATE_KEY_PATH, else null. */
+export function truelayerPrivateKeyPem(config: Pick<Env, "TRUELAYER_PRIVATE_KEY" | "TRUELAYER_PRIVATE_KEY_PATH"> = env): string | null {
+  if (config.TRUELAYER_PRIVATE_KEY) return config.TRUELAYER_PRIVATE_KEY.replace(/\\n/g, "\n");
+  if (config.TRUELAYER_PRIVATE_KEY_PATH) return readFileSync(config.TRUELAYER_PRIVATE_KEY_PATH, "utf8");
+  return null;
 }
 
 export const isProduction = env.NODE_ENV === "production";
