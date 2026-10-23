@@ -157,7 +157,7 @@ struct CreateCollectionView: View {
                                     Text(member.displayName)
                                         .font(.quidHeadline)
                                         .foregroundStyle(Color.quidInk)
-                                        .lineLimit(1)
+                                        .quidLineLimit(1)
                                     Text(member.userId == nil ? "Pays from the link" : "On Quid")
                                         .font(.quidFootnote)
                                         .foregroundStyle(Color.quidMuted)

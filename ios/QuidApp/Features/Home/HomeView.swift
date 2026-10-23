@@ -267,7 +267,7 @@ struct HomeView: View {
                                     Text(contact.firstName)
                                         .font(.quidFootnote)
                                         .foregroundStyle(Color.quidInk)
-                                        .lineLimit(2)
+                                        .quidLineLimit(2)
                                         .multilineTextAlignment(.center)
                                 }
                                 .frame(width: contactTileWidth)

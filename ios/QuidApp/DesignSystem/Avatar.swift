@@ -1,12 +1,20 @@
 import SwiftUI
 
-/// Initials on a tinted circle. Decorative: the surrounding row carries the accessible name.
+/// Initials on a tinted circle. Decorative: the surrounding row carries the accessible name. The circle grows with the
+/// text size, by the same factor as the initials, so they never have to shrink to fit.
 struct Avatar: View {
     let name: String
-    var size: CGFloat = 44
+    let size: CGFloat
+    @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
+
+    init(name: String, size: CGFloat = 44) {
+        self.name = name
+        self.size = size
+    }
 
     var body: some View {
         let tint = AvatarTint.tint(for: name)
+        let side = (size * scale).rounded()
         ZStack {
             Circle()
                 .fill(tint.background)
@@ -16,7 +24,7 @@ struct Avatar: View {
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
         }
-        .frame(width: size, height: size)
+        .frame(width: side, height: side)
         .accessibilityHidden(true)
     }
 

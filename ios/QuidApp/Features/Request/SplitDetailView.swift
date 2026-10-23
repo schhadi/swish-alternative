@@ -200,7 +200,8 @@ struct SplitDetailView: View {
                             .foregroundStyle(Color.quidInk)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                            .textSelection(.enabled)
+                            .accessibilityLabel("Link address")
+                            .accessibilityValue(split.link)
                         HStack(spacing: 10) {
                             QuidPillButton(title: copied ? "Copied" : "Copy link", style: .neutral) {
                                 UIPasteboard.general.string = split.link
@@ -242,17 +243,18 @@ struct SplitShareRow: View {
                 Text(share.displayName)
                     .font(.quidHeadline)
                     .foregroundStyle(Color.quidInk)
-                    .lineLimit(1)
+                    .quidLineLimit(1)
                 Text(subtitle)
                     .font(.quidFootnote)
                     .foregroundStyle(Color.quidMuted)
-                    .lineLimit(2)
+                    .quidLineLimit(2)
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 6) {
                 Text(Money(minor: share.amountMinor).formatted())
                     .font(.quidHeadline)
                     .foregroundStyle(Color.quidInk)
+                    .accessibilityLabel(Money(minor: share.amountMinor).spokenDescription)
                 trailing
             }
         }

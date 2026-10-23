@@ -55,6 +55,7 @@ struct AmountText: View {
             .foregroundStyle(color ?? Color.quidInk)
             .lineLimit(1)
             .minimumScaleFactor(0.6)
+            .accessibilityLabel(money.spokenDescription)
     }
 
     private var font: Font {

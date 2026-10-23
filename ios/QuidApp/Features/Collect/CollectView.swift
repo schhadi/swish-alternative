@@ -129,14 +129,20 @@ struct CollectView: View {
             QuidCard(padding: 0) {
                 VStack(spacing: 0) {
                     ForEach(Array(viewModel.dues.enumerated()), id: \.element.id) { index, due in
-                        Button {
-                            if due.isPayable { payingDue = due }
-                        } label: {
+                        // Only a share still to pay is a button; a paid or closed one is information, not a disabled
+                        // control, so it keeps full contrast.
+                        if due.isPayable {
+                            Button {
+                                payingDue = due
+                            } label: {
+                                CollectionDueRow(due: due)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("collect.due.\(due.collectionId)")
+                        } else {
                             CollectionDueRow(due: due)
+                                .accessibilityIdentifier("collect.due.\(due.collectionId)")
                         }
-                        .buttonStyle(.plain)
-                        .disabled(!due.isPayable)
-                        .accessibilityIdentifier("collect.due.\(due.collectionId)")
                         if index < viewModel.dues.count - 1 {
                             QuidDivider().padding(.leading, 72)
                         }
@@ -208,11 +214,11 @@ struct CollectionDueRow: View {
                 Text(due.organisationName)
                     .font(.quidHeadline)
                     .foregroundStyle(Color.quidInk)
-                    .lineLimit(1)
+                    .quidLineLimit(1)
                 Text(subtitle)
                     .font(.quidFootnote)
                     .foregroundStyle(Color.quidMuted)
-                    .lineLimit(1)
+                    .quidLineLimit(1)
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 4) {

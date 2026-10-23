@@ -223,11 +223,11 @@ private struct ContactRow: View {
                 Text(entry.contact.displayName)
                     .font(.quidHeadline)
                     .foregroundStyle(Color.quidInk)
-                    .lineLimit(1)
+                    .quidLineLimit(1)
                 Text(subtitle)
                     .font(.quidFootnote)
                     .foregroundStyle(subtitleIsWarning ? Color.quidPendingText : Color.quidMuted)
-                    .lineLimit(1)
+                    .quidLineLimit(1)
             }
             Spacer(minLength: 8)
             trailingView

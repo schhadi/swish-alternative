@@ -16,11 +16,11 @@ struct PaymentRow: View {
                 Text(payment.counterparty.displayName)
                     .font(.quidHeadline)
                     .foregroundStyle(Color.quidInk)
-                    .lineLimit(1)
+                    .quidLineLimit(1)
                 Text("\(payment.reference) · \(payment.createdAt.quidRelativeDescription)")
                     .font(.quidFootnote)
                     .foregroundStyle(Color.quidMuted)
-                    .lineLimit(1)
+                    .quidLineLimit(1)
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 4) {

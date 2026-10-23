@@ -100,7 +100,7 @@ struct RequestAmountView: View {
                     .font(.quid(.extrabold, size: 56, relativeTo: .largeTitle))
                     .tracking(-2)
                     .foregroundStyle(viewModel.enteredTotalMinor == 0 ? Color.quidMuted : Color.quidInk)
-                    .lineLimit(1)
+                    .quidLineLimit(1)
                     .minimumScaleFactor(0.5)
                     .frame(maxWidth: .infinity, minHeight: 72)
                     .contentTransition(.numericText())
@@ -145,7 +145,7 @@ struct RequestAmountView: View {
                             Text(person.displayName)
                                 .font(.quidHeadline)
                                 .foregroundStyle(Color.quidInk)
-                                .lineLimit(1)
+                                .quidLineLimit(1)
                             Spacer(minLength: 8)
                             HStack(spacing: 2) {
                                 Text("£")

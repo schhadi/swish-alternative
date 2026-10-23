@@ -66,7 +66,8 @@ struct QRCodeSheet: View {
                             .foregroundStyle(Color.quidInk)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                            .textSelection(.enabled)
+                            .accessibilityLabel("Link address")
+                            .accessibilityValue(url.absoluteString)
                         Spacer(minLength: 8)
                         QuidPillButton(title: copied ? "Copied" : "Copy", style: .neutral) {
                             UIPasteboard.general.string = url.absoluteString

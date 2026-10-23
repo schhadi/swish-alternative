@@ -33,4 +33,15 @@ final class MoneyTests: XCTestCase {
     func testPoundsFactory() {
         XCTAssertEqual(Money.pounds(30).minor, 3000)
     }
+
+    func testSpokenDescriptionReadsLikeSpeech() {
+        XCTAssertEqual(Money(minor: 1200).spokenDescription, "12 pounds")
+        XCTAssertEqual(Money(minor: 1250).spokenDescription, "12 pounds 50")
+        XCTAssertEqual(Money(minor: 100).spokenDescription, "1 pound")
+        XCTAssertEqual(Money(minor: 50).spokenDescription, "50 pence")
+        XCTAssertEqual(Money(minor: 1).spokenDescription, "1 penny")
+        XCTAssertEqual(Money(minor: 0).spokenDescription, "0 pounds")
+        XCTAssertEqual(Money(minor: -850).spokenDescription, "minus 8 pounds 50")
+        XCTAssertEqual(Money(minor: 125_000).spokenDescription, "1,250 pounds")
+    }
 }

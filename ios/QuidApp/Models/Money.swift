@@ -30,6 +30,24 @@ struct Money: Hashable, Codable, Sendable {
         return "\(sign)\(symbol)\(poundsText).\(String(format: "%02d", pence))"
     }
 
+    /// What VoiceOver says: "12 pounds 50", "1 pound", "50 pence", "minus 8 pounds 50". The accessibility audit
+    /// treats a bare "£12.00" label as not human-readable.
+    var spokenDescription: String {
+        guard currency == "GBP" else { return formatted() }
+        let absolute = abs(minor)
+        let pounds = absolute / 100
+        let pence = absolute % 100
+        var parts: [String] = []
+        if pounds > 0 {
+            parts.append("\(Money.grouped(pounds)) \(pounds == 1 ? "pound" : "pounds")")
+        }
+        if pence > 0 {
+            parts.append(pounds > 0 ? String(pence) : "\(pence) \(pence == 1 ? "penny" : "pence")")
+        }
+        let words = parts.isEmpty ? "0 pounds" : parts.joined(separator: " ")
+        return isNegative ? "minus \(words)" : words
+    }
+
     /// 1250 -> "1,250". Avoids NumberFormatter so output is identical on every locale.
     static func grouped(_ value: Int) -> String {
         let digits = Array(String(value))

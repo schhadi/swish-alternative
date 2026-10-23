@@ -192,12 +192,14 @@ struct CollectionDetailView: View {
                     Text("Pay link")
                         .font(.quidHeadline)
                         .foregroundStyle(Color.quidInk)
+                    // Copy and Share handle the link; the address itself is for reading, not tapping.
                     Text(url.absoluteString)
                         .font(.system(.footnote, design: .monospaced))
                         .foregroundStyle(Color.quidInk)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .textSelection(.enabled)
+                        .accessibilityLabel("Link address")
+                        .accessibilityValue(url.absoluteString)
                     HStack(spacing: 10) {
                         QuidPillButton(title: copied ? "Copied" : "Copy", style: .neutral) {
                             UIPasteboard.general.string = url.absoluteString
@@ -282,11 +284,11 @@ struct CollectionMemberRow: View {
                 Text(member.displayName)
                     .font(.quidHeadline)
                     .foregroundStyle(Color.quidInk)
-                    .lineLimit(1)
+                    .quidLineLimit(1)
                 Text(subtitle)
                     .font(.quidFootnote)
                     .foregroundStyle(Color.quidMuted)
-                    .lineLimit(2)
+                    .quidLineLimit(2)
             }
             Spacer(minLength: 8)
             trailing

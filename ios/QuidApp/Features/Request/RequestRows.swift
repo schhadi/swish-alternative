@@ -16,11 +16,11 @@ struct SplitSummaryRow: View {
                 Text(split.title)
                     .font(.quidHeadline)
                     .foregroundStyle(Color.quidInk)
-                    .lineLimit(1)
+                    .quidLineLimit(1)
                 Text("\(split.progressLine) · \(split.createdAt.quidRelativeDescription)")
                     .font(.quidFootnote)
                     .foregroundStyle(Color.quidMuted)
-                    .lineLimit(1)
+                    .quidLineLimit(1)
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 4) {
@@ -52,11 +52,11 @@ struct IncomingRequestRow: View {
                 Text(request.requester.displayName)
                     .font(.quidHeadline)
                     .foregroundStyle(Color.quidInk)
-                    .lineLimit(1)
+                    .quidLineLimit(1)
                 Text("\(request.title) · \(request.createdAt.quidRelativeDescription)")
                     .font(.quidFootnote)
                     .foregroundStyle(Color.quidMuted)
-                    .lineLimit(1)
+                    .quidLineLimit(1)
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 4) {
