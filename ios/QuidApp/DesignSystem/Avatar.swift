@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Initials on a tinted circle. Decorative: the surrounding row carries the accessible name. The circle grows with the
-/// text size, by the same factor as the initials, so they never have to shrink to fit.
+/// text size up to 1.6 times, so a row still leaves room for the name at the largest sizes, and the initials are sized
+/// from the circle, so they always fit.
 struct Avatar: View {
     let name: String
     let size: CGFloat
@@ -14,18 +15,20 @@ struct Avatar: View {
 
     var body: some View {
         let tint = AvatarTint.tint(for: name)
-        let side = (size * scale).rounded()
+        let side = (size * min(scale, Avatar.maximumScale)).rounded()
         ZStack {
             Circle()
                 .fill(tint.background)
             Text(Avatar.initials(for: name))
-                .font(.quid(.bold, size: size * 0.36, relativeTo: .body))
+                .font(.custom(QuidFontWeight.bold.postScriptName, fixedSize: side * 0.36))
                 .foregroundStyle(tint.foreground)
                 .lineLimit(1)
         }
         .frame(width: side, height: side)
         .accessibilityHidden(true)
     }
+
+    static let maximumScale: CGFloat = 1.6
 
     /// "Priya Patel" -> "PP", "cher" -> "C", "" -> "?"
     static func initials(for name: String) -> String {

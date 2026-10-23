@@ -140,7 +140,8 @@ final class AccessibilityAuditTests: XCTestCase {
 ///   (`quidLineLimit`), and the findings stay in the log for review;
 /// - "potentially inaccessible text" with no element: avatar initials, hidden from VoiceOver on purpose because the row
 ///   reads the full name;
-/// - Dynamic Type on avatar initials: the circle and its initials both grow with the text size (`Avatar`, ScaledMetric).
+/// - Dynamic Type on avatar initials: the circle grows with the text size (`Avatar`, ScaledMetric, capped so rows keep
+///   room for the name) and the initials are sized from it.
 @MainActor
 private final class Auditor {
     let app: XCUIApplication
