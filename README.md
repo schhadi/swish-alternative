@@ -22,7 +22,7 @@ Phase 0 also ships a navigable UI shell (Home · Activity · Collect · Me) runn
 ```
 /ios        Xcode project (QuidApp) — SwiftUI, iOS 17+, no third-party packages yet
 /backend    Fastify + Prisma API (TypeScript, Node 20)
-/docs       SPEC.md (the brief), DECISIONS.md (choices not covered by the brief), RUNBOOK.md (how to run things, sandbox setup, go-live checklist)
+/docs       SPEC.md (the brief), DECISIONS.md (choices not covered by the brief), RUNBOOK.md (how to run things, sandbox setup, go-live checklist), STRATEGY.md (pricing and the YC roadmap)
 /scripts    dev helpers: backend dev server, seed, iOS tests, ngrok (Phase 2)
 ```
 
