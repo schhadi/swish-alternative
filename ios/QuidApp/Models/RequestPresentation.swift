@@ -1,13 +1,14 @@
 import Foundation
 
 extension RequestStatus {
-    /// Open / Paid / Declined / Expired, as pills and list subtitles show them.
+    /// Open / Paid / Declined / Expired / Cancelled, as pills and list subtitles show them.
     var pillText: String {
         switch self {
         case .pending: return "Open"
         case .paid: return "Paid"
         case .declined: return "Declined"
         case .expired: return "Expired"
+        case .cancelled: return "Cancelled"
         }
     }
 
@@ -16,7 +17,7 @@ extension RequestStatus {
         case .pending: return .pending
         case .paid: return .success
         case .declined: return .failure
-        case .expired: return .neutral
+        case .expired, .cancelled: return .neutral
         }
     }
 }
@@ -57,6 +58,21 @@ extension SplitDTO {
 
     var progressLine: String {
         "\(paidCount) of \(shareCount) paid"
+    }
+
+    /// Open while anyone can still pay; Cancelled when every request was withdrawn; Done otherwise.
+    var statusText: String {
+        if !isComplete { return "Open" }
+        return isWithdrawn ? "Cancelled" : "Done"
+    }
+
+    var statusTone: StatusPill.Tone {
+        if !isComplete { return .pending }
+        return isWithdrawn ? .neutral : .success
+    }
+
+    private var isWithdrawn: Bool {
+        !shares.isEmpty && shares.allSatisfy { $0.status == .cancelled }
     }
 }
 

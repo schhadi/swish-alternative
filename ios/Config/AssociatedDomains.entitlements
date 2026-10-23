@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Universal links for split links (https://<domain>/s/<id>). Not wired into the target by default: the Associated
+  Domains capability needs a paid Apple Developer team, and a personal team cannot sign it. To turn it on, replace
+  quid.example with the PUBLIC_BASE_URL host, set the target's CODE_SIGN_ENTITLEMENTS to Config/AssociatedDomains.entitlements,
+  and set APPLE_APP_IDS on the backend. docs/RUNBOOK.md, go-live checklist.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:quid.example</string>
+	</array>
+</dict>
+</plist>

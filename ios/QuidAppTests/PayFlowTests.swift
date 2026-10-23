@@ -176,7 +176,7 @@ final class PayFlowTests: XCTestCase {
         viewModel.setQuickAmount(500)
         await viewModel.submit()
         XCTAssertEqual(viewModel.path, [.result])
-        XCTAssertEqual(viewModel.resultKind, .failed("You cancelled the payment in your bank app. Nothing has been sent."))
+        XCTAssertEqual(viewModel.resultKind, .failed("You cancelled the payment. Nothing has been sent."))
         viewModel.tryAgain()
         XCTAssertTrue(viewModel.path.isEmpty)
         XCTAssertNil(viewModel.created)
@@ -247,5 +247,60 @@ final class PayFlowTests: XCTestCase {
         let denied = ContactPickerViewModel(contactSource: refusing, api: environment.api)
         await denied.requestAccess()
         XCTAssertEqual(denied.permission, .denied)
+    }
+
+    // MARK: - Phase 5: cancelling and declines
+
+    func testCancellingTheFirstTimeSheetCancelsThePaymentOnTheServer() async throws {
+        let (viewModel, authoriser) = await viewModel(target: amara)
+        viewModel.setQuickAmount(500)
+        await viewModel.submit()
+        let paymentId = try XCTUnwrap(viewModel.pendingFirstTime?.paymentId)
+        viewModel.cancelFirstTime()
+        await viewModel.cancelTask?.value
+        XCTAssertTrue(MockServer.shared.recordedCalls().contains { $0.method == "POST" && $0.path == "/payments/\(paymentId)/cancel" })
+        XCTAssertEqual(MockFixtures.state.createdPayments.first { $0.id == paymentId }?.status(), "CANCELLED")
+        XCTAssertTrue(authoriser.requests.isEmpty, "the bank was never opened")
+        // A second dismissal callback for the same sheet sends nothing more.
+        viewModel.cancelFirstTime()
+        XCTAssertEqual(MockServer.shared.recordedCalls().filter { $0.path.hasSuffix("/cancel") }.count, 1)
+    }
+
+    func testBackingOutAtTheBankCancelsThePaymentOnTheServer() async {
+        let authoriser = MockPaymentAuthoriser()
+        authoriser.outcome = .cancelled
+        let (viewModel, _) = await viewModel(target: priya, authoriser: authoriser)
+        viewModel.setQuickAmount(700)
+        await viewModel.submit()
+        XCTAssertEqual(viewModel.payment?.status, .cancelled, "the server's answer to the cancel")
+        XCTAssertEqual(viewModel.resultKind, .failed("You cancelled the payment. Nothing has been sent."))
+        viewModel.stopPolling()
+    }
+
+    func testTheMockBankDeclinesAmountsEndingIn13p() async throws {
+        let (viewModel, _) = await viewModel(target: priya)
+        for key: PayViewModel.KeypadKey in [.digit(5), .point, .digit(1), .digit(3)] {
+            viewModel.press(key)
+        }
+        XCTAssertEqual(viewModel.amountMinor, 513)
+        await viewModel.submit()
+        let deadline = Date().addingTimeInterval(6)
+        while viewModel.payment?.status != .failed, Date() < deadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(viewModel.payment?.status, .failed)
+        XCTAssertEqual(viewModel.resultKind, .failed("The payment didn't go through. Nothing has been sent."))
+        viewModel.stopPolling()
+    }
+
+    func testAMockPaymentWaitsForTheBankBeforeMoving() {
+        var payment = MockCreatedPayment(id: "p", payeeUserId: "u_priya", payeeName: "Priya Patel", amountMinor: 500, reference: "Hi", createdAt: Date().addingTimeInterval(-60))
+        XCTAssertEqual(payment.status(), "AUTHORIZING", "not approved, however old")
+        payment.authorisedAt = Date().addingTimeInterval(-10)
+        XCTAssertEqual(payment.status(), "SETTLED")
+        XCTAssertTrue(payment.isSent())
+        payment.cancelledAt = Date()
+        XCTAssertEqual(payment.status(), "CANCELLED")
+        XCTAssertEqual(payment.failureReason, "canceled")
     }
 }

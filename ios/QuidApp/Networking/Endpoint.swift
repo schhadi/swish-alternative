@@ -140,6 +140,16 @@ enum API {
         Endpoint(method: .post, path: "/requests/\(id)/decline")
     }
 
+    /// The payer backs out before finishing at the bank (Phase 5). Answers the payment as it now stands.
+    static func cancelPayment(id: String) -> Endpoint<PaymentDTO> {
+        Endpoint(method: .post, path: "/payments/\(id)/cancel")
+    }
+
+    /// Withdraws every open request in the split.
+    static func cancelSplit(id: String) -> Endpoint<SplitCancelResultDTO> {
+        Endpoint(method: .post, path: "/splits/\(id)/cancel")
+    }
+
     static func remindRequest(id: String) -> Endpoint<PaymentRequestDTO> {
         Endpoint(method: .post, path: "/requests/\(id)/remind")
     }

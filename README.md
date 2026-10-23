@@ -12,8 +12,8 @@ The full product spec is in [`docs/SPEC.md`](docs/SPEC.md). Work happens phase b
 | 1 | Onboarding + directory: OTP sign-in, name, bank account with Confirmation of Payee, providers, contacts hashing + lookup, real (empty) feeds | Done, reviewed |
 | 2 | Pay end to end: limits, state machine, signed webhooks, polling, SDK authorisation, result screen; works against the built-in fake bank. Sandbox run pending: TrueLayer hosts were unreachable from the build environment (docs/DECISIONS.md #59) | Done, reviewed |
 | 3 | Requests and splits: split flow (equal or custom), split detail with nudges and a shareable link, incoming requests with Pay / Decline, reminders once per 24h, invite links | Done, reviewed |
-| 4 | Collect: organisations with a bank-checked account, collections with a link and QR code, treasurer view, reminders, public web pay page, paying a share in the app | **Done, awaiting review** |
-| 5 | Hardening | Not started |
+| 4 | Collect: organisations with a bank-checked account, collections with a link and QR code, treasurer view, reminders, public web pay page, paying a share in the app | Done, reviewed |
+| 5 | Hardening: payer and requester cancel, a daily cap on new payees, account deletion asserted end to end, contrast tests in light and dark, accessibility audit UI tests, pay-flow UI tests, universal links (off until a domain exists), the suite on Postgres in CI, runbook with the go-live checklist | **Done, awaiting review** |
 
 Phase 0 also ships a navigable UI shell (Home · Activity · Collect · Me) running on canned data, so the design system can be reviewed on a simulator. Every button now does what it says; the "Phase N" placeholder sheets of the early phases are gone.
 
@@ -22,7 +22,7 @@ Phase 0 also ships a navigable UI shell (Home · Activity · Collect · Me) runn
 ```
 /ios        Xcode project (QuidApp) — SwiftUI, iOS 17+, no third-party packages yet
 /backend    Fastify + Prisma API (TypeScript, Node 20)
-/docs       SPEC.md (the brief), DECISIONS.md (choices not covered by the brief), RUNBOOK.md (how to run things)
+/docs       SPEC.md (the brief), DECISIONS.md (choices not covered by the brief), RUNBOOK.md (how to run things, sandbox setup, go-live checklist)
 /scripts    dev helpers: backend dev server, seed, iOS tests, ngrok (Phase 2)
 ```
 
@@ -49,11 +49,11 @@ Open `ios/QuidApp.xcodeproj` in Xcode 16 or later (iOS 17 simulator).
 - Scheme **QuidApp**: talks to the backend at `http://localhost:3000`. Set the `QUID_API_BASE_URL` environment variable in the scheme to point a physical device at an ngrok URL.
 - With no session, the welcome screen offers **Explore the demo**, which switches a live build into MockMode. Launch with `-mock -signed-out` to walk onboarding against the mock backend (code `123456`).
 
-Tests: product → Test in Xcode, or `scripts/ios-test.sh`. Unit tests cover money formatting, date grouping, the API client's error mapping (via the same `MockURLProtocol` MockMode uses), and every ViewModel. One XCUITest launches the app in MockMode and checks the tab bar.
+Tests: product → Test in Xcode, or `scripts/ios-test.sh`. Unit tests cover money formatting, date grouping, the API client's error mapping (via the same `MockURLProtocol` MockMode uses), every ViewModel and the contrast of every colour pair in light and dark. XCUITests run in MockMode: onboarding, paying (including the first-time warning and a declined payment), requesting, paying a request, creating a collection, and Xcode's accessibility audit over the main screens in light, dark and the largest text size.
 
 ### CI
 
-`.github/workflows/ci.yml` runs `npm test` (plus typecheck) on Ubuntu and `xcodebuild test` on a macOS runner with an iPhone simulator.
+`.github/workflows/ci.yml` runs `npm test` (plus typecheck and build) on Ubuntu against SQLite, the same suite against Postgres 16, and `xcodebuild test` on a macOS runner with an iPhone simulator.
 
 ## Design
 

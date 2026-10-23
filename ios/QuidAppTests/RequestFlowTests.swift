@@ -328,4 +328,39 @@ final class RequestFlowTests: XCTestCase {
         XCTAssertEqual(NameList.firstNames(["Priya Patel", "Tom Whitfield", "Amara Osei"]), "Priya, Tom and Amara")
         XCTAssertEqual(NameList.firstNames(["A B", "C D", "E F", "G H", "I J"]), "A, C and 3 others")
     }
+
+    // MARK: - Phase 5: withdrawing requests
+
+    func testCancellingASplitsOpenRequestsLeavesPaidAndDeclinedAlone() async throws {
+        let environment = await environment()
+        let fixture = try await environment.api.send(API.split(id: "split_501"))
+        let viewModel = SplitDetailViewModel(api: environment.api, split: fixture)
+        XCTAssertEqual(viewModel.openCount, 1)
+        await viewModel.cancelOpenRequests()
+        XCTAssertEqual(viewModel.notice, "Cancelled. Tom can't pay this any more.")
+        let statuses = Dictionary(uniqueKeysWithValues: viewModel.split.shares.map { ($0.userId, $0.status) })
+        XCTAssertEqual(statuses, ["u_amara": .declined, "u_priya": .paid, "u_tom": .cancelled])
+        XCTAssertNotNil(viewModel.split.shares.first { $0.userId == "u_tom" }?.cancelledAt)
+        XCTAssertEqual(viewModel.openCount, 0)
+        XCTAssertTrue(viewModel.split.isComplete)
+        XCTAssertEqual(viewModel.split.statusText, "Done")
+        XCTAssertEqual(RequestStatus.cancelled.pillText, "Cancelled")
+        XCTAssertEqual(RequestStatus.cancelled.pillTone, .neutral)
+
+        // Asking again does nothing.
+        await viewModel.cancelOpenRequests()
+        XCTAssertEqual(MockServer.shared.recordedCalls().filter { $0.path == "/splits/split_501/cancel" }.count, 1)
+    }
+
+    func testASplitWithEveryRequestWithdrawnReadsCancelled() async throws {
+        let environment = await environment()
+        let created = try await environment.api.send(API.createSplit(CreateSplitRequest(title: "Taxi", totalMinor: 2000, shares: [.init(userId: "u_tom", amountMinor: 2000)])))
+        let viewModel = SplitDetailViewModel(api: environment.api, split: created)
+        XCTAssertEqual(viewModel.split.statusText, "Open")
+        await viewModel.cancelOpenRequests()
+        XCTAssertEqual(viewModel.split.statusText, "Cancelled")
+        XCTAssertEqual(viewModel.split.statusTone, .neutral)
+        let outgoing = try await environment.api.send(API.requests(role: .outgoing)).requests
+        XCTAssertEqual(outgoing.first { $0.splitId == created.id }?.status, .cancelled)
+    }
 }

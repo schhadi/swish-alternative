@@ -57,6 +57,8 @@ final class PayViewModel {
     private let environment: AppEnvironment
     private let authoriser: any PaymentAuthoriser
     private var pollTask: Task<Void, Never>?
+    /// The cancel call made when the first-time sheet is dismissed; kept so tests can wait for it.
+    private(set) var cancelTask: Task<Void, Never>?
 
     init(environment: AppEnvironment, target: PayTarget?, request: PaymentRequestDTO? = nil, collectionDue: CollectionDueDTO? = nil, authoriser: (any PaymentAuthoriser)? = nil) {
         self.environment = environment
@@ -160,7 +162,7 @@ final class PayViewModel {
         }
         switch outcome {
         case .cancelled:
-            return .failed("You cancelled the payment in your bank app. Nothing has been sent.")
+            return .failed(PaymentStatus.cancelled.failureMessage ?? "You cancelled the payment. Nothing has been sent.")
         case .failed(let message):
             return .failed(message)
         case .completed, .none:
@@ -243,11 +245,17 @@ final class PayViewModel {
         await authorise(response)
     }
 
-    /// The payment stays CREATED/AUTHORIZING on the server and expires with the bank; nothing has moved.
+    /// Nothing has moved. The server is asked to cancel the payment, so it stops counting against the payer's
+    /// limits at once instead of when the bank lets it expire; if that call fails, the bank's expiry still ends it.
     func cancelFirstTime() {
         guard confirmedFirstTime == nil else { return }
+        let paymentId = created?.paymentId
         pendingFirstTime = nil
         created = nil
+        if let paymentId {
+            let api = environment.api
+            cancelTask = Task { _ = try? await api.send(API.cancelPayment(id: paymentId)) }
+        }
     }
 
     func authoriseAgain() async {
@@ -273,6 +281,13 @@ final class PayViewModel {
         payment = response.payment
         if path.last != .result {
             path.append(.result)
+        }
+        if outcome == .cancelled {
+            // The payer backed out at the bank: release the amount now. A 409 means the bank sent it after all,
+            // which the poll below then shows.
+            if let updated = try? await environment.api.send(API.cancelPayment(id: response.paymentId)) {
+                payment = updated
+            }
         }
         startPolling()
     }

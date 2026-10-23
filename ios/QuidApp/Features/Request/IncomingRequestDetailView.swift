@@ -105,6 +105,8 @@ struct IncomingRequestDetailView: View {
             return DetailRow(label: "Declined", value: request.declinedAt?.quidReceiptDescription ?? "Declined")
         case .expired:
             return DetailRow(label: "Expired", value: request.expiresAt.quidReceiptDescription)
+        case .cancelled:
+            return DetailRow(label: "Cancelled", value: request.cancelledAt?.quidReceiptDescription ?? "Cancelled by \(request.requester.displayName)")
         }
     }
 }

@@ -38,6 +38,10 @@ final class MockPaymentAuthoriser: PaymentAuthoriser {
         if delay > 0 {
             try? await Task.sleep(for: .seconds(delay))
         }
+        // Approving at the mock bank is what starts a mock payment moving; a cancel leaves it waiting.
+        if outcome == .completed {
+            MockServer.shared.withStateLock { MockFixtures.approve(paymentId: request.paymentId) }
+        }
         return outcome
     }
 

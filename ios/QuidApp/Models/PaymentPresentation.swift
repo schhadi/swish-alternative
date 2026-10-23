@@ -39,7 +39,7 @@ extension PaymentStatus {
     /// support and logs, never shown verbatim.
     var failureMessage: String? {
         switch self {
-        case .cancelled: return "You cancelled the payment in your bank app. Nothing has been sent."
+        case .cancelled: return "You cancelled the payment. Nothing has been sent."
         case .failed: return "The payment didn't go through. Nothing has been sent."
         case .created, .authorizing, .authorized, .executed, .settled: return nil
         }

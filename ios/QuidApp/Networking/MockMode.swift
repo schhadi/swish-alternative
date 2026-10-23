@@ -128,6 +128,13 @@ final class MockServer: @unchecked Sendable {
         return nil
     }
 
+    /// Changes the mock backend's state under the lock request handling uses (the mock bank approving a payment).
+    func withStateLock(_ body: () -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        body()
+    }
+
     /// Every request seen since the last reset, oldest first. Used by tests.
     func recordedRequests() -> [URLRequest] {
         lock.lock()

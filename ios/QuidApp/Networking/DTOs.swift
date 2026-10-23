@@ -82,6 +82,8 @@ enum RequestStatus: String, Codable, Sendable {
     case paid = "PAID"
     case declined = "DECLINED"
     case expired = "EXPIRED"
+    /// The requester withdrew it (Phase 5).
+    case cancelled = "CANCELLED"
 }
 
 /// A request for money. Both sides get the same fields; the reminder fields matter to the requester only.
@@ -104,6 +106,7 @@ struct PaymentRequestDTO: Codable, Hashable, Identifiable, Sendable {
     let splitTitle: String?
     let paidAt: Date?
     let declinedAt: Date?
+    var cancelledAt: Date? = nil
     let lastRemindedAt: Date?
     let remindCount: Int?
     /// When the requester may nudge again; nil means now.
@@ -125,6 +128,7 @@ struct SplitShareDTO: Codable, Hashable, Identifiable, Sendable {
     let paymentId: String?
     let paidAt: Date?
     let declinedAt: Date?
+    var cancelledAt: Date? = nil
     let lastRemindedAt: Date?
     let remindCount: Int
     /// When the creator may nudge again; nil means now.
@@ -144,7 +148,7 @@ struct SplitDTO: Codable, Hashable, Identifiable, Sendable {
     let shareCount: Int
     let paidCount: Int
     let pendingCount: Int
-    /// Nobody is left to pay: every share is paid, declined or expired.
+    /// Nobody is left to pay: every share is paid, declined, expired or cancelled.
     let isComplete: Bool
     /// https://<domain>/s/<id>: a page that opens the split in the app.
     let link: String
@@ -160,6 +164,12 @@ struct SkippedReminderDTO: Codable, Hashable, Sendable {
     /// "too_soon" (nudged in the last 24 hours) or "not_pending".
     let reason: String
     let nextReminderAt: Date?
+}
+
+/// POST /splits/:id/cancel: the requests withdrawn and the split as it now stands.
+struct SplitCancelResultDTO: Codable, Sendable {
+    let cancelled: [String]
+    let split: SplitDTO
 }
 
 struct SplitReminderResultDTO: Codable, Sendable {

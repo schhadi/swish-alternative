@@ -11,6 +11,7 @@ final class SplitDetailViewModel {
     private(set) var notice: String?
     private(set) var busyRequestIds: Set<String> = []
     private(set) var isRemindingAll = false
+    private(set) var isCancelling = false
     private(set) var isLoading = false
     let justCreated: Bool
 
@@ -98,6 +99,29 @@ final class SplitDetailViewModel {
         }
         return line
     }
+
+    /// Withdraws every open request. People who already paid or declined keep their state; a payment someone has
+    /// already started at their bank still counts if it goes through.
+    func cancelOpenRequests() async {
+        guard !isCancelling, openCount > 0 else { return }
+        isCancelling = true
+        defer { isCancelling = false }
+        do {
+            let result = try await api.send(API.cancelSplit(id: split.id))
+            split = result.split
+            let names = result.cancelled.compactMap { id in result.split.shares.first { $0.requestId == id }?.displayName }
+            notice = names.isEmpty ? "Nobody had anything left to pay." : "Cancelled. \(NameList.firstNames(names)) can't pay this any more."
+        } catch is CancellationError {
+            return
+        } catch let appError as AppError {
+            notice = appError.userMessage
+            await load()
+        } catch {
+            notice = error.localizedDescription
+        }
+    }
+
+    static let cancelExplanation = "Everyone who hasn't paid yet will see it as cancelled and can't pay it. People who have already paid aren't affected."
 
     func dismissNotice() {
         notice = nil

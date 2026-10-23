@@ -27,7 +27,7 @@ struct SplitSummaryRow: View {
                 Text(Money(minor: split.requestedMinor).formatted())
                     .font(.quidHeadline)
                     .foregroundStyle(Color.quidInk)
-                StatusPill(text: split.isComplete ? "Done" : "Open", tone: split.isComplete ? .success : .pending)
+                StatusPill(text: split.statusText, tone: split.statusTone)
             }
             QuidChevron()
         }
@@ -36,7 +36,7 @@ struct SplitSummaryRow: View {
         .frame(minHeight: 60)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(split.title). Asked for \(Money(minor: split.requestedMinor).formatted()). \(split.progressLine). \(split.isComplete ? "Done" : "Open")")
+        .accessibilityLabel("\(split.title). Asked for \(Money(minor: split.requestedMinor).formatted()). \(split.progressLine). \(split.statusText)")
         .accessibilityAddTraits(.isButton)
     }
 }

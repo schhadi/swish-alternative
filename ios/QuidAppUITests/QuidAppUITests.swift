@@ -1,6 +1,7 @@
 import XCTest
 
-/// Launch, onboarding, pay, request, pay-a-request and create-a-collection journeys against MockMode.
+/// Launch, onboarding, pay (known payee, first-time warning, a bank decline), request, pay-a-request and
+/// create-a-collection journeys against MockMode.
 final class QuidAppUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -69,6 +70,79 @@ final class QuidAppUITests: XCTestCase {
 
         waitFor(app.tabBars.buttons["Home"], in: app, timeout: 10)
         XCTAssertTrue(app.staticTexts["Priya Patel"].firstMatch.waitForExistence(timeout: 10))
+    }
+
+    /// Amara has never been paid: the warning sheet names her as her bank holds the account. Cancel goes back to the
+    /// amount with nothing sent; Pay continues to the bank and ends Paid.
+    @MainActor
+    func testFirstTimePayeeWarningCanBeCancelledThenPaid() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-mock"]
+        app.launch()
+
+        let pay = app.buttons["home.pay"]
+        waitFor(pay, in: app, timeout: 20)
+        pay.tap()
+        let amara = app.buttons["pay.contact.u_amara"]
+        waitFor(amara, in: app, timeout: 10)
+        amara.tap()
+        waitFor(app.staticTexts["pay.amount"], in: app, timeout: 10)
+        app.buttons["pay.key.8"].tap()
+        app.buttons["pay.submit"].tap()
+
+        let cancel = app.buttons["pay.firstTime.cancel"]
+        waitFor(cancel, in: app, timeout: 10)
+        XCTAssertTrue(labelled(containing: "First time paying Amara Osei?", in: app).exists)
+        XCTAssertTrue(labelled(containing: "\u{201C}Amara Osei\u{201D}", in: app).exists, "the name as Amara's bank holds it")
+        cancel.tap()
+        waitForAbsence(cancel)
+        XCTAssertEqual(app.staticTexts["pay.amount"].value as? String, "£8.00", "back on the amount, nothing sent")
+
+        app.buttons["pay.submit"].tap()
+        let confirm = app.buttons["pay.firstTime.confirm"]
+        waitFor(confirm, in: app, timeout: 10)
+        confirm.tap()
+        let title = app.staticTexts["pay.result.title"]
+        waitFor(title, in: app, timeout: 15)
+        let paid = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Paid"), object: title)
+        XCTAssertEqual(XCTWaiter().wait(for: [paid], timeout: 15), .completed, "result title was \(title.label)")
+        app.buttons["pay.done"].tap()
+        waitFor(app.buttons["home.pay"], in: app, timeout: 10)
+    }
+
+    /// The mock bank declines amounts ending in 13p: the result says Failed, and Try again keeps the person and amount.
+    @MainActor
+    func testPaymentTheBankDeclinesShowsFailedWithTryAgain() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-mock"]
+        app.launch()
+
+        let priya = app.buttons["home.recent.u_priya"]
+        waitFor(priya, in: app, timeout: 20)
+        priya.tap()
+        waitFor(app.staticTexts["pay.amount"], in: app, timeout: 10)
+        for key in ["5", "point", "1", "3"] {
+            app.buttons["pay.key.\(key)"].tap()
+        }
+        XCTAssertEqual(app.staticTexts["pay.amount"].value as? String, "£5.13")
+        app.buttons["pay.submit"].tap()
+
+        let title = app.staticTexts["pay.result.title"]
+        waitFor(title, in: app, timeout: 15)
+        let failed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Failed"), object: title)
+        XCTAssertEqual(XCTWaiter().wait(for: [failed], timeout: 15), .completed, "result title was \(title.label)")
+        XCTAssertTrue(labelled(containing: "The payment didn't go through.", in: app).exists)
+
+        let tryAgain = app.buttons["pay.tryAgain"]
+        XCTAssertTrue(tryAgain.exists)
+        tryAgain.tap()
+        waitFor(app.staticTexts["pay.amount"], in: app, timeout: 10)
+        XCTAssertEqual(app.staticTexts["pay.amount"].value as? String, "£5.13")
+    }
+
+    /// Any element whose label contains the text, wherever SwiftUI grouped it.
+    private func labelled(containing text: String, in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
     }
 
     /// Waits until the element has gone, for things that disappear after a reload.

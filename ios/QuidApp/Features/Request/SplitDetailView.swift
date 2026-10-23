@@ -6,6 +6,7 @@ import UIKit
 struct SplitDetailView: View {
     @State private var viewModel: SplitDetailViewModel
     @State private var copied = false
+    @State private var confirmingCancel = false
     let onDone: (() -> Void)?
 
     init(api: APIClient, split: SplitDTO, justCreated: Bool = false, onDone: (() -> Void)? = nil) {
@@ -58,12 +59,37 @@ struct SplitDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                if let onDone {
-                    Button("Done", action: onDone)
-                        .font(.quidSubheadline)
-                        .accessibilityIdentifier("split.done")
+                HStack(spacing: 4) {
+                    if viewModel.openCount > 0 {
+                        Menu {
+                            Button("Cancel open requests", systemImage: "xmark.circle", role: .destructive) {
+                                confirmingCancel = true
+                            }
+                            .accessibilityIdentifier("split.cancelOpen")
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.system(size: 17, weight: .semibold))
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel("More")
+                        .accessibilityIdentifier("split.more")
+                    }
+                    if let onDone {
+                        Button("Done", action: onDone)
+                            .font(.quidSubheadline)
+                            .accessibilityIdentifier("split.done")
+                    }
                 }
             }
+        }
+        .confirmationDialog("Cancel the open requests in \u{201C}\(split.title)\u{201D}?", isPresented: $confirmingCancel, titleVisibility: .visible) {
+            Button("Cancel open requests", role: .destructive) {
+                Task { await viewModel.cancelOpenRequests() }
+            }
+            .accessibilityIdentifier("split.cancelOpen.confirm")
+            Button("Keep them", role: .cancel) {}
+        } message: {
+            Text(SplitDetailViewModel.cancelExplanation)
         }
         .task { await viewModel.load() }
         .refreshable { await viewModel.load() }
@@ -261,6 +287,8 @@ struct SplitShareRow: View {
             return "Declined"
         case .expired:
             return "Expired without paying"
+        case .cancelled:
+            return share.cancelledAt.map { "You cancelled this \($0.quidInlineDescription)" } ?? "You cancelled this"
         case .pending:
             if let reminded = share.lastRemindedAt {
                 return "Not paid yet · nudged \(reminded.quidInlineDescription)"
