@@ -68,6 +68,12 @@ jobs:
             sed -n '/UITEST-HIERARCHY-BEGIN/,/UITEST-HIERARCHY-END/p' xcodebuild.log | head -400
             echo "::endgroup::"
           fi
+          # The accessibility audit prints one AXAUDIT line per finding.
+          if grep -q "AXAUDIT" xcodebuild.log; then
+            echo "::group::Accessibility audit findings"
+            grep -oE "AXAUDIT.*" xcodebuild.log | sort | uniq | head -400
+            echo "::endgroup::"
+          fi
           if [ "$STATUS" -eq 0 ] && [ "$CRASHES" -gt 0 ]; then
             echo "::error::A test host crashed; the suites it was running did not complete"
             exit 1
