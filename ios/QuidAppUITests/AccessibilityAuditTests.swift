@@ -217,12 +217,12 @@ private final class Auditor {
         return true
     }
 
-    /// One or two capital letters (or "?") in a square frame: the initials `Avatar` draws.
+    /// One or two characters in a square frame: the initials `Avatar` draws ("PP", "F4" for Flat 4B, "?").
     private static func isAvatarInitials(_ element: XCUIElement?) -> Bool {
         guard let element else { return false }
         let frame = element.frame
         let square = frame.width > 0 && abs(frame.width - frame.height) <= 2
-        return square && element.label.range(of: "^[A-Z?]{1,2}$", options: .regularExpression) != nil
+        return square && element.label.range(of: "^\\S{1,2}$", options: .regularExpression) != nil
     }
 
     func finish() {
