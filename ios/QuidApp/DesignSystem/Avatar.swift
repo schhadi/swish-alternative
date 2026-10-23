@@ -21,7 +21,6 @@ struct Avatar: View {
             Text(Avatar.initials(for: name))
                 .font(.quid(.bold, size: size * 0.36, relativeTo: .body))
                 .foregroundStyle(tint.foreground)
-                .minimumScaleFactor(0.5)
                 .lineLimit(1)
         }
         .frame(width: side, height: side)

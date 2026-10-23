@@ -121,7 +121,7 @@ struct MeView: View {
                 VStack(spacing: 0) {
                     if let bank = viewModel.me?.bankAccount {
                         HStack(spacing: 12) {
-                            MeRow(systemImage: "building.columns", title: bank.bankName)
+                            MeRow(systemImage: "building.columns.fill", title: bank.bankName)
                             StatusPill(text: bank.copStatus.label, tone: bank.copStatus.pillTone)
                                 .padding(.trailing, 16)
                         }
@@ -144,12 +144,12 @@ struct MeView: View {
                         Button {
                             showBankSheet = true
                         } label: {
-                            MeRow(systemImage: "building.columns", title: "Link your bank account", accessory: .chevron)
+                            MeRow(systemImage: "building.columns.fill", title: "Link your bank account", accessory: .chevron)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("me.linkBank")
                     } else {
-                        MeRow(systemImage: "building.columns", title: "Loading")
+                        MeRow(systemImage: "building.columns.fill", title: "Loading")
                             .redacted(reason: .placeholder)
                             .accessibilityHidden(true)
                     }

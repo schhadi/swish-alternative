@@ -139,7 +139,8 @@ final class AccessibilityAuditTests: XCTestCase {
 /// - text clipping, which the audit reports for single-line SwiftUI text that fits; rows wrap at accessibility sizes
 ///   (`quidLineLimit`), and the findings stay in the log for review;
 /// - "potentially inaccessible text" with no element: avatar initials, hidden from VoiceOver on purpose because the row
-///   reads the full name.
+///   reads the full name;
+/// - Dynamic Type on avatar initials: the circle and its initials both grow with the text size (`Avatar`, ScaledMetric).
 @MainActor
 private final class Auditor {
     let app: XCUIApplication
@@ -191,6 +192,8 @@ private final class Auditor {
             reason = "decorative text hidden from VoiceOver"
         case "dynamicType" where inNavBar:
             reason = "bar button, Large Content Viewer"
+        case "dynamicType" where Self.isAvatarInitials(element):
+            reason = "avatar initials scale with their circle"
         case "contrast" where inBarZone:
             reason = "under a bar"
         case "contrast" where element?.isEnabled == false:
@@ -211,6 +214,14 @@ private final class Auditor {
         }
         ignored += 1
         return true
+    }
+
+    /// One or two capital letters (or "?") in a square frame: the initials `Avatar` draws.
+    private static func isAvatarInitials(_ element: XCUIElement?) -> Bool {
+        guard let element else { return false }
+        let frame = element.frame
+        let square = frame.width > 0 && abs(frame.width - frame.height) <= 2
+        return square && element.label.range(of: "^[A-Z?]{1,2}$", options: .regularExpression) != nil
     }
 
     func finish() {
