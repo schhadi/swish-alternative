@@ -120,11 +120,8 @@ struct MeView: View {
             QuidCard(padding: 0) {
                 VStack(spacing: 0) {
                     if let bank = viewModel.me?.bankAccount {
-                        HStack(spacing: 12) {
-                            MeRow(systemImage: "building.columns.fill", title: bank.bankName)
-                            StatusPill(text: bank.copStatus.label, tone: bank.copStatus.pillTone)
-                                .padding(.trailing, 16)
-                        }
+                        // The bank's check reads as the row's value, like every other row here.
+                        MeRow(systemImage: "building.columns.fill", title: bank.bankName, value: bank.copStatus.label)
                         if let until = bank.coolingOffUntil, until > Date() {
                             Text("You can receive payments again from \(until.quidReceiptDescription).")
                                 .font(.quidFootnote)
