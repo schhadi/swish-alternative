@@ -78,7 +78,7 @@ struct MockCreatedPayment: Sendable {
 
     /// The bank has sent the money: it pays a request or a share, and the payee is no longer new.
     func isSent(at now: Date = Date()) -> Bool {
-        let status = status(at: now)
+        let status = self.status(at: now)
         return status == "EXECUTED" || status == "SETTLED"
     }
 

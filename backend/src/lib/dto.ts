@@ -21,6 +21,7 @@ export function limitsDTO() {
     perPaymentMinor: LIMITS.perPaymentMinor,
     rolling24hMinor: LIMITS.rolling24hMinor,
     rolling30dMinor: LIMITS.rolling30dMinor,
+    newPayeesPer24h: LIMITS.newPayeesPer24h,
   };
 }
 

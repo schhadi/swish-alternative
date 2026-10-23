@@ -79,7 +79,12 @@ export async function applyTransition(paymentId: string, input: TransitionInput,
     }
     if (!allowedFrom.includes(from)) {
       const reason = classifyIgnored(from, input.to);
-      log[reason === "stale" ? "info" : "warn"]({ paymentId, from, to: input.to, source: input.source, reason }, "payment transition ignored");
+      if (FAILURE.has(from) && (input.to === "EXECUTED" || input.to === "SETTLED")) {
+        // The provider says money moved for a payment we closed as failed or cancelled: needs a person (refund or fix).
+        log.error({ paymentId, from, to: input.to, source: input.source, audit: "sent_after_failure" }, "provider reports a failed or cancelled payment as sent");
+      } else {
+        log[reason === "stale" ? "info" : "warn"]({ paymentId, from, to: input.to, source: input.source, reason }, "payment transition ignored");
+      }
       await afterSent(paymentId, from, log, at);
       return { applied: false, reason, current: from };
     }

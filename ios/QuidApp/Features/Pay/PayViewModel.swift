@@ -155,6 +155,8 @@ final class PayViewModel {
             case .executed, .settled:
                 return .paid
             case .failed, .cancelled:
+                // Cancelled by the app because the bank's page failed: the reason the payer saw is the one to keep.
+                if status == .cancelled, case .failed(let message) = outcome { return .failed(message) }
                 return .failed(status.failureMessage ?? "The payment didn't go through. Nothing has been sent.")
             case .created, .authorizing, .authorized:
                 break
@@ -282,9 +284,9 @@ final class PayViewModel {
         if path.last != .result {
             path.append(.result)
         }
-        if outcome == .cancelled {
-            // The payer backed out at the bank: release the amount now. A 409 means the bank sent it after all,
-            // which the poll below then shows.
+        if outcome != .completed {
+            // The payer backed out, or the bank's page never worked: release the amount now. A 409 means the bank
+            // has it after all (approved or sent), which the poll below then shows.
             if let updated = try? await environment.api.send(API.cancelPayment(id: response.paymentId)) {
                 payment = updated
             }

@@ -49,7 +49,8 @@ button{display:block;width:100%;height:58px;border:0;border-radius:18px;font-siz
   /** Approve: authorized now, executed after 2 s, settled after 6 s, so the app's result screen shows each stage. */
   app.post("/dev/authorise/:id/approve", async (request, reply) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
-    if (!provider.advance(id, "authorized")) return reply.status(404).send({ error: "not_found", message: "No such fake payment" });
+    if (!provider.describe(id)) return reply.status(404).send({ error: "not_found", message: "No such fake payment" });
+    if (!provider.advance(id, "authorized")) return reply.status(409).send({ error: "payment_ended", message: "This payment was cancelled or declined." });
     await reconcile(id);
     setTimeout(() => {
       provider.advance(id, "executed");
@@ -64,7 +65,8 @@ button{display:block;width:100%;height:58px;border:0;border-radius:18px;font-siz
 
   app.post("/dev/authorise/:id/decline", async (request, reply) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
-    if (!provider.advance(id, "failed", "user_canceled")) return reply.status(404).send({ error: "not_found", message: "No such fake payment" });
+    if (!provider.describe(id)) return reply.status(404).send({ error: "not_found", message: "No such fake payment" });
+    if (!provider.advance(id, "failed", "user_canceled")) return reply.status(409).send({ error: "payment_ended", message: "This payment was cancelled or declined." });
     await reconcile(id);
     return reply.redirect(provider.returnTo(id) ?? returnUri, 303);
   });

@@ -30,7 +30,7 @@ describe("me", () => {
     expect(response.json()).toEqual({
       user: { id: userId, phoneE164: "+447700900002", displayName: "", createdAt: expect.any(String) },
       bankAccount: null,
-      limits: { perPaymentMinor: 25_000, rolling24hMinor: 50_000, rolling30dMinor: 200_000 },
+      limits: { perPaymentMinor: 25_000, rolling24hMinor: 50_000, rolling30dMinor: 200_000, newPayeesPer24h: 10 },
     });
   });
 

@@ -107,7 +107,14 @@ export async function isFirstTimePayee(tx: Tx, payerUserId: string, payeeUserId:
 export async function assertNewPayeeAllowance(tx: Tx, payerUserId: string, payeeUserId: string, now: Date): Promise<void> {
   const since = new Date(now.getTime() - DAY_MS);
   const disclosed = await tx.payment.findMany({
-    where: { payerUserId, firstTimePayee: true, payeeUserId: { not: null }, createdAt: { gte: since } },
+    where: {
+      payerUserId,
+      firstTimePayee: true,
+      payeeUserId: { not: null },
+      createdAt: { gte: since },
+      // A start the provider refused (502) or that never reached it showed no name, so it doesn't count.
+      NOT: { status: "FAILED", failureReason: { in: ["provider_error", "abandoned"] } },
+    },
     select: { payeeUserId: true },
     distinct: ["payeeUserId"],
   });

@@ -83,6 +83,54 @@ describe("Phase 5 hardening", () => {
       expect((await prisma.payment.findUniqueOrThrow({ where: { id: started.paymentId } })).status).toBe("EXECUTED");
     });
 
+    it("refuses once the payer has approved at the bank, without asking the provider", async () => {
+      const started = await startPayment(sam.token, { payeeUserId: priya.userId, amountMinor: 1200, reference: "Lunch" });
+      ctx.provider.advance(started.tlPaymentId, "authorized");
+      await reconcilePayment(started.paymentId, started.tlPaymentId, ctx.provider, "poll", silentLog);
+      let asked = 0;
+      const original = ctx.provider.cancelPayment.bind(ctx.provider);
+      ctx.provider.cancelPayment = async (id) => {
+        asked += 1;
+        return original(id);
+      };
+      try {
+        const response = await inject("POST", `/payments/${started.paymentId}/cancel`, sam.token);
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toMatchObject({ error: "payment_not_cancellable", message: "You've approved this payment at your bank, so it can't be cancelled now." });
+        expect(asked).toBe(0);
+      } finally {
+        ctx.provider.cancelPayment = original;
+      }
+      // The fake bank goes on to send it, and our row follows.
+      await execute(started.paymentId, started.tlPaymentId);
+      expect((await prisma.payment.findUniqueOrThrow({ where: { id: started.paymentId } })).status).toBe("EXECUTED");
+    });
+
+    it("answers 502 when the provider refuses a payment that is still waiting for the payer", async () => {
+      const started = await startPayment(sam.token, { payeeUserId: priya.userId, amountMinor: 1200, reference: "Lunch" });
+      const original = ctx.provider.cancelPayment.bind(ctx.provider);
+      ctx.provider.cancelPayment = async () => {
+        throw new ProviderError("bad request", 400, "invalid_parameters");
+      };
+      try {
+        const response = await inject("POST", `/payments/${started.paymentId}/cancel`, sam.token);
+        expect(response.statusCode).toBe(502);
+        expect(response.json().error).toBe("payment_provider_unavailable");
+        expect((await prisma.payment.findUniqueOrThrow({ where: { id: started.paymentId } })).status).toBe("AUTHORIZING");
+      } finally {
+        ctx.provider.cancelPayment = original;
+      }
+    });
+
+    it("never resurrects a cancelled fake payment", async () => {
+      const started = await startPayment(sam.token, { payeeUserId: priya.userId, amountMinor: 1200, reference: "Lunch" });
+      await inject("POST", `/payments/${started.paymentId}/cancel`, sam.token);
+      expect(ctx.provider.advance(started.tlPaymentId, "executed")).toBe(false);
+      const approve = await ctx.app.inject({ method: "POST", url: `/dev/authorise/${started.tlPaymentId}/approve` });
+      expect(approve.statusCode).toBe(409);
+      expect((await prisma.payment.findUniqueOrThrow({ where: { id: started.paymentId } })).status).toBe("CANCELLED");
+    });
+
     it("keeps the payment in flight when the provider accepts the cancel but has not applied it yet", async () => {
       const started = await startPayment(sam.token, { payeeUserId: priya.userId, amountMinor: 1200, reference: "Lunch" });
       const original = ctx.provider.cancelPayment.bind(ctx.provider);
@@ -209,6 +257,21 @@ describe("Phase 5 hardening", () => {
 
       const flagged = await prisma.payment.count({ where: { payerUserId: sam.userId, firstTimePayee: true } });
       expect(flagged).toBe(LIMITS.newPayeesPer24h + 1);
+    });
+
+    it("doesn't count a start the provider refused, since no name was shown", async () => {
+      const people: string[] = [];
+      for (let index = 0; index < LIMITS.newPayeesPer24h; index += 1) {
+        const person = await registerUser(ctx, `07700 9002${String(index).padStart(2, "0")}`, `Outage ${index}`, { accountNumber: `6000${String(index).padStart(4, "0")}` });
+        people.push(person.userId);
+      }
+      for (const payee of people) {
+        ctx.provider.failNextCreate = new ProviderError("down", 503, null);
+        const failed = await inject("POST", "/payments", sam.token, { payeeUserId: payee, amountMinor: 1, reference: "Hi" });
+        expect(failed.statusCode).toBe(502);
+      }
+      // Ten refused starts later, a first payment to someone new still goes through.
+      expect((await startPayment(sam.token, { payeeUserId: priya.userId, amountMinor: 1, reference: "Hi" })).firstTimePayee).toBe(true);
     });
 
     it("writes an audit line with ids only when a bank-held name is disclosed", () => {

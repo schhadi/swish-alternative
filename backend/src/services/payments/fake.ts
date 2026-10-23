@@ -58,7 +58,7 @@ export class FakePaymentProvider implements PaymentProvider {
   async cancelPayment(providerPaymentId: string): Promise<void> {
     const record = this.records.get(providerPaymentId);
     if (!record) throw new ProviderError("fake payment not found", 404, "not_found");
-    if (!["authorization_required", "authorizing", "authorized"].includes(record.state.status)) {
+    if (!["authorization_required", "authorizing"].includes(record.state.status)) {
       throw new ProviderError("fake payment not cancellable", 400, "not_cancellable");
     }
     record.state = { ...record.state, status: "failed", failureReason: "canceled" };
@@ -83,9 +83,10 @@ export class FakePaymentProvider implements PaymentProvider {
     return `${record.returnUri}${separator}payment_id=${encodeURIComponent(providerPaymentId)}`;
   }
 
+  /** Moves a fake payment on. A failed one stays failed, as a real bank's would: false, nothing changes. */
   advance(providerPaymentId: string, status: ProviderStatus, failureReason: string | null = null, providerId?: string | null): boolean {
     const record = this.records.get(providerPaymentId);
-    if (!record) return false;
+    if (!record || record.state.status === "failed") return false;
     record.state = {
       status,
       failureReason: status === "failed" ? failureReason ?? "failed" : null,

@@ -303,4 +303,17 @@ final class PayFlowTests: XCTestCase {
         XCTAssertEqual(payment.status(), "CANCELLED")
         XCTAssertEqual(payment.failureReason, "canceled")
     }
+
+    func testABankPageThatFailsCancelsThePaymentAndKeepsTheBanksReason() async {
+        let authoriser = MockPaymentAuthoriser()
+        authoriser.outcome = .failed("Your bank's payment page wasn't available. Try again in a moment.")
+        let (viewModel, _) = await viewModel(target: priya, authoriser: authoriser)
+        viewModel.setQuickAmount(900)
+        await viewModel.submit()
+        let paymentId = viewModel.created?.paymentId ?? ""
+        XCTAssertTrue(MockServer.shared.recordedCalls().contains { $0.method == "POST" && $0.path == "/payments/\(paymentId)/cancel" })
+        XCTAssertEqual(viewModel.payment?.status, .cancelled)
+        XCTAssertEqual(viewModel.resultKind, .failed("Your bank's payment page wasn't available. Try again in a moment."))
+        viewModel.stopPolling()
+    }
 }
