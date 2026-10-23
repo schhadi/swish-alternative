@@ -165,8 +165,6 @@ private final class Auditor {
             (.dynamicType, "dynamicType"),
             (.textClipped, "textClipped"),
             (.trait, "trait"),
-            (.action, "action"),
-            (.parentChild, "parentChild"),
         ]
         return names.first { type.contains($0.0) }?.1 ?? "type(\(type.rawValue))"
     }
