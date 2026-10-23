@@ -8,7 +8,7 @@ import { HttpError } from "../../lib/errors.js";
 import { withKeyedLock } from "../../lib/keyedLock.js";
 import { LIMITS } from "../../limits.js";
 import { decryptBankDetails, encryptBankDetails, type BankDetails } from "../bankAccounts.js";
-import { sendToProvider } from "../payments/create.js";
+import { logNameDisclosure, sendToProvider } from "../payments/create.js";
 import type { PaymentProvider } from "../payments/provider.js";
 import { assertWithinLimits, pounds } from "../payments/rules.js";
 import { pushStub } from "../push.js";
@@ -369,6 +369,7 @@ export async function createCollectionPayment(
         reference: referenceFromTitle(collection.title),
         status: "CREATED",
         providerId: payerProviderId,
+        firstTimePayee,
         createdAt: now,
       },
     });
@@ -393,6 +394,9 @@ export async function createCollectionPayment(
     log,
   );
   log.info({ paymentId: prepared.payment.id, collectionId: prepared.collection.id, via: payer.kind }, "collection payment started");
+  if (payer.kind === "user" && prepared.firstTimePayee) {
+    logNameDisclosure(log, prepared.payment.id, payer.user.id, { organisationId: prepared.collection.orgId });
+  }
   return {
     paymentId: prepared.payment.id,
     providerPaymentId: created.providerPaymentId,

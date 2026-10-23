@@ -6,6 +6,8 @@ import { requestDTO, splitDTO } from "../lib/dto.js";
 import { HttpError } from "../lib/errors.js";
 import { LIMITS } from "../limits.js";
 import {
+  cancelRequest,
+  cancelSplit,
   createRequest,
   createSplit,
   declineRequest,
@@ -95,6 +97,14 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
     return requestDTO((await loadRequest(id))!);
   });
 
+  /** The requester withdraws an open request (not in SPEC 5; docs/DECISIONS.md #91). */
+  app.post("/requests/:id/cancel", { preHandler: requireAuth }, async (request) => {
+    const { id: userId } = currentUser(request);
+    const { id } = IdParams.parse(request.params);
+    await cancelRequest(id, userId, request.log);
+    return requestDTO((await loadRequest(id))!);
+  });
+
   app.post("/requests/:id/remind", { preHandler: [requireAuth, reminderLimit] }, async (request) => {
     const { id: userId } = currentUser(request);
     const { id } = IdParams.parse(request.params);
@@ -128,6 +138,15 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
       throw new HttpError(404, "split_not_found", "We couldn't find that split.");
     }
     return splitDTO(split);
+  });
+
+  /** Cancels every open share in the split; answers which were cancelled and the split as it now stands. */
+  app.post("/splits/:id/cancel", { preHandler: requireAuth }, async (request) => {
+    const { id: userId } = currentUser(request);
+    const { id } = IdParams.parse(request.params);
+    const outcome = await cancelSplit(id, userId, request.log);
+    const split = await prisma.split.findUniqueOrThrow({ where: { id }, include: splitInclude });
+    return { ...outcome, split: splitDTO(split) };
   });
 
   app.post("/splits/:id/remind", { preHandler: [requireAuth, reminderLimit] }, async (request) => {

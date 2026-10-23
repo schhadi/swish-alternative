@@ -61,6 +61,19 @@ const EnvSchema = z.object({
   PAYMENT_RETURN_URI: z.string().min(1).default("quid://return/payment"),
   // Where the invite and split-link pages send people to get the app (App Store or TestFlight). Blank: they say so.
   APP_DOWNLOAD_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  // Universal links: the app ids (<Team ID>.<bundle id>, comma-separated) allowed to open PUBLIC_BASE_URL's split links.
+  // Blank: /.well-known/apple-app-site-association answers 404 and the split page's button opens the app instead.
+  APPLE_APP_IDS: z
+    .preprocess(emptyToUndefined, z.string().optional())
+    .transform((value, ctx): string[] => {
+      const ids = (value ?? "").split(",").map((entry) => entry.trim()).filter(Boolean);
+      for (const id of ids) {
+        if (!/^[A-Z0-9]{10}\.[A-Za-z0-9.-]+$/.test(id)) {
+          ctx.addIssue({ code: "custom", message: `APPLE_APP_IDS entry "${id}" is not <10-character Team ID>.<bundle id>` });
+        }
+      }
+      return ids;
+    }),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

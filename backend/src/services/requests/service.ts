@@ -172,6 +172,47 @@ export async function declineRequest(requestId: string, userId: string, log: Fas
 }
 
 /**
+ * The requester withdraws an open request (docs/DECISIONS.md #91). A payment already at the bank still pays it: the
+ * state machine marks any request PAID once its payment executes, whatever it said before.
+ */
+export async function cancelRequest(requestId: string, userId: string, log: FastifyBaseLogger, now: Date = new Date()): Promise<void> {
+  const result = await prisma.paymentRequest.updateMany({
+    where: { id: requestId, requesterUserId: userId, status: "PENDING", expiresAt: { gt: now } },
+    data: { status: "CANCELLED", cancelledAt: now },
+  });
+  const row = await prisma.paymentRequest.findUnique({ where: { id: requestId }, select: { payerUserId: true, requesterUserId: true, status: true, expiresAt: true } });
+  if (!row || row.requesterUserId !== userId) {
+    throw new HttpError(404, "request_not_found", "We couldn't find that request.");
+  }
+  if (result.count === 0) {
+    throw notPendingError(effectiveRequestStatus(row, now));
+  }
+  log.info({ requestId }, "payment request cancelled");
+  pushStub(log, "request_cancelled", [row.payerUserId], { requestId });
+}
+
+/** Cancels every share of a split that is still open; paid, declined and expired shares stay as they are. */
+export async function cancelSplit(splitId: string, userId: string, log: FastifyBaseLogger, now: Date = new Date()): Promise<{ cancelled: string[] }> {
+  const split = await prisma.split.findUnique({ where: { id: splitId }, select: { creatorUserId: true, shares: { select: { requestId: true } } } });
+  if (!split || split.creatorUserId !== userId) {
+    throw new HttpError(404, "split_not_found", "We couldn't find that split.");
+  }
+  const cancelled: string[] = [];
+  for (const { requestId } of split.shares) {
+    try {
+      await cancelRequest(requestId, userId, log, now);
+      cancelled.push(requestId);
+    } catch (error) {
+      if (!(error instanceof HttpError) || error.code !== "request_not_pending") throw error;
+    }
+  }
+  if (cancelled.length === 0) {
+    throw new HttpError(409, "split_nothing_to_cancel", "Nobody in this split has anything left to pay.");
+  }
+  return { cancelled };
+}
+
+/**
  * The requester nudges the payer: at most once per 24 hours per request (docs/SPEC.md section 7). The condition is
  * part of the write, so two taps at once send one reminder.
  */

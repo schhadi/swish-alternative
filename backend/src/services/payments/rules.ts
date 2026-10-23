@@ -99,3 +99,25 @@ export async function isFirstTimePayee(tx: Tx, payerUserId: string, payeeUserId:
   const completed = await tx.payment.count({ where: { payerUserId, payeeUserId, status: { in: ["EXECUTED", "SETTLED"] } } });
   return completed === 0;
 }
+
+/**
+ * Starting to pay someone new discloses their bank-held name for the warning sheet, so a payer can start at most
+ * LIMITS.newPayeesPer24h new people a day. A second attempt to the same person the same day costs nothing more.
+ */
+export async function assertNewPayeeAllowance(tx: Tx, payerUserId: string, payeeUserId: string, now: Date): Promise<void> {
+  const since = new Date(now.getTime() - DAY_MS);
+  const disclosed = await tx.payment.findMany({
+    where: { payerUserId, firstTimePayee: true, payeeUserId: { not: null }, createdAt: { gte: since } },
+    select: { payeeUserId: true },
+    distinct: ["payeeUserId"],
+  });
+  if (disclosed.some((row) => row.payeeUserId === payeeUserId)) return;
+  if (disclosed.length >= LIMITS.newPayeesPer24h) {
+    throw new HttpError(
+      429,
+      "new_payee_limit",
+      `You can start paying up to ${LIMITS.newPayeesPer24h} new people a day. You can still pay people you've paid before.`,
+      { limit: LIMITS.newPayeesPer24h },
+    );
+  }
+}

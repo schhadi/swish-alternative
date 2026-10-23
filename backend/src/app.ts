@@ -39,6 +39,8 @@ export interface AppServices {
 
 export interface BuildAppOptions {
   services?: Partial<AppServices>;
+  /** Universal-link app ids for the apple-app-site-association file (default APPLE_APP_IDS). */
+  appleAppIds?: string[];
   /**
    * Per-IP cap on the auth routes (default LIMITS.authRequestsPerMinutePerIp). The one limit tests can tune:
    * every injected request shares 127.0.0.1, so a file of tests would trip the production cap.
@@ -147,7 +149,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.register(directoryRoutes);
   app.register(paymentRoutes);
   app.register(requestRoutes);
-  app.register(linkRoutes);
+  app.register(linkRoutes, { appleAppIds: options.appleAppIds ?? env.APPLE_APP_IDS });
   app.register(organisationRoutes);
   app.register(collectPageRoutes, {
     pagesPerMinute: options.publicPagesPerMinutePerIp ?? LIMITS.collectPagesPerMinutePerIp,

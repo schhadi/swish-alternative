@@ -34,6 +34,8 @@ enum RequestStatus {
   PAID
   DECLINED
   EXPIRED
+  // Phase 5: the requester withdrew it.
+  CANCELLED
 }
 
 enum OrgKind {
@@ -164,6 +166,9 @@ model Payment {
   providerId     String?
   providerStatus String?
   lastPolledAt   DateTime?
+  // Phase 5: the payer had never completed a payment to this payee when it was created, so the payee's bank-held name
+  // was disclosed for the warning sheet. Counts towards the daily cap on new payees.
+  firstTimePayee Boolean @default(false)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -204,6 +209,7 @@ model PaymentRequest {
   remindCount     Int           @default(0)
   paidAt          DateTime?
   declinedAt      DateTime?
+  cancelledAt     DateTime?
   createdAt       DateTime      @default(now())
 
   splitShare SplitShare?

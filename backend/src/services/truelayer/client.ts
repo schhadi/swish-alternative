@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import * as tlSigning from "truelayer-signing";
 import type { HttpMethod } from "truelayer-signing";
 import { LIMITS } from "../../limits.js";
@@ -17,6 +18,9 @@ import { ProviderError, type CreatePaymentInput, type CreatedProviderPayment, ty
  * status vocabulary, the hosted payment page URL, the Idempotency-Key replay semantics (same response or 409,
  * byte-identical body, key lifetime; no retry is attempted until that is known) and the GB provider ids in
  * services/providers.ts (a preselected payment with an unknown id fails as 4xx -> FAILED -> 502, nothing is sent).
+ * Cancelling (Phase 5): POST /v3/payments/{id}/actions/cancel answering an empty 202, with the outcome arriving later
+ * as payment_failed (failure_reason "canceled") or payment_cancellation_failed, comes from TrueLayer's cancel-a-payment
+ * page as seen through search results only; the signed empty-object body is an assumption.
  * All of them live in this file only.
  */
 export interface TrueLayerClientOptions {
@@ -119,6 +123,25 @@ export class TrueLayerClient implements PaymentProvider {
     };
   }
 
+  async cancelPayment(providerPaymentId: string): Promise<void> {
+    const path = `/v3/payments/${encodeURIComponent(providerPaymentId)}/actions/cancel`;
+    const body = "{}";
+    // A fresh key per attempt: a repeated cancel is harmless (202 again, or 4xx once it is no longer cancellable).
+    const idempotencyKey = randomUUID();
+    const signature = tlSigning.sign({
+      kid: this.options.kid,
+      privateKeyPem: this.options.privateKeyPem,
+      method: "POST" as unknown as HttpMethod,
+      path,
+      headers: { "Idempotency-Key": idempotencyKey },
+      body,
+    });
+    await this.request<null>("POST", path, {
+      body,
+      headers: { "Idempotency-Key": idempotencyKey, "Tl-Signature": signature, "Content-Type": "application/json" },
+    });
+  }
+
   hostedPaymentPage(paymentId: string, resourceToken: string, returnUri: string): string {
     const fragment = `payment_id=${encodeURIComponent(paymentId)}&resource_token=${encodeURIComponent(resourceToken)}&return_uri=${encodeURIComponent(returnUri)}`;
     return `${this.options.hppBaseUrl}/payments#${fragment}`;
@@ -183,6 +206,8 @@ export class TrueLayerClient implements PaymentProvider {
       }
       throw new ProviderError(`${method} ${path} rejected`, response.status, code);
     }
-    return (await response.json()) as T;
+    // Actions such as cancel answer 202 with no body.
+    const text = await response.text();
+    return (text.length > 0 ? JSON.parse(text) : null) as T;
   }
 }

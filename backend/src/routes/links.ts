@@ -5,6 +5,7 @@ import { z } from "zod";
 import { env } from "../config.js";
 import { currentUser, requireAuth } from "../lib/auth.js";
 import { prisma } from "../lib/db.js";
+import { HttpError } from "../lib/errors.js";
 import { escapeHtml, firstName, sendHtmlPage } from "../lib/html.js";
 import { LIMITS } from "../limits.js";
 
@@ -34,8 +35,21 @@ function downloadBlock(inviterFirstName: string | null): string {
  * Invite links for contacts who are not on Quid (Phase 3) and the page behind a split's shared link. Both pages show
  * the sender's first name and nothing else about anyone: no surnames, numbers, amounts or other people's names.
  */
-export async function linkRoutes(app: FastifyInstance): Promise<void> {
+export async function linkRoutes(app: FastifyInstance, options: { appleAppIds?: readonly string[] } = {}): Promise<void> {
   const pageLimit = app.rateLimit({ max: LIMITS.publicPagesPerMinutePerIp, timeWindow: "1 minute" });
+  const association = appSiteAssociation(options.appleAppIds ?? []);
+
+  /**
+   * Universal links (docs/DECISIONS.md #94): iOS fetches this once per install to learn that split links open the app.
+   * Only /s/ is claimed. Invite links and collection pages stay in the browser: the people they are for may not have
+   * the app, and the collection page is how anyone pays without it.
+   */
+  app.get("/.well-known/apple-app-site-association", async (_request, reply) => {
+    if (!association) {
+      throw new HttpError(404, "not_found", "Universal links are not configured.");
+    }
+    return reply.header("cache-control", "public, max-age=3600").type("application/json").send(association);
+  });
 
   /** The signed-in user's invite link, created on first use and stable afterwards. */
   app.get("/me/invite", { preHandler: requireAuth }, async (request) => {
@@ -86,4 +100,19 @@ ${downloadBlock(name)}`);
 <a class="button primary" href="quid://split/${encodeURIComponent(split.id)}">Open in Quid</a>
 ${downloadBlock(name)}`);
   });
+}
+
+/** The apple-app-site-association document, or null when no app id is configured. */
+export function appSiteAssociation(appIds: readonly string[]) {
+  if (appIds.length === 0) return null;
+  return {
+    applinks: {
+      details: [
+        {
+          appIDs: [...appIds],
+          components: [{ "/": "/s/*", comment: "A split's shared link opens the split in Quid" }],
+        },
+      ],
+    },
+  };
 }

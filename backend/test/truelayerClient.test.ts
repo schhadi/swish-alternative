@@ -161,4 +161,31 @@ describe("TrueLayerClient", () => {
     ]);
     await expect(client(weird).getPayment("tl")).rejects.toMatchObject({ providerCode: "unknown_status" });
   });
+
+  it("cancels with a signed POST to the payment's cancel action and accepts an empty 202", async () => {
+    const { impl, calls } = scriptedFetch([
+      { status: 200, body: { access_token: "tok", expires_in: 3600 } },
+      { status: 202, body: undefined },
+      { status: 400, body: { type: "https://docs.truelayer.com/errors#payment_not_cancellable" } },
+    ]);
+    const tl = client(impl);
+    await expect(tl.cancelPayment("tl_9")).resolves.toBeUndefined();
+    const cancel = calls[1];
+    expect(cancel).toMatchObject({ url: "https://api.truelayer-sandbox.com/v3/payments/tl_9/actions/cancel", method: "POST", body: "{}" });
+    const key = cancel?.headers["idempotency-key"] ?? "";
+    expect(key).not.toBe("");
+    expect(() =>
+      tlSigning.verify({
+        publicKeyPem: fixture("ec512-public.pem"),
+        signature: cancel?.headers["tl-signature"] ?? "",
+        method: "POST" as unknown as HttpMethod,
+        path: "/v3/payments/tl_9/actions/cancel",
+        headers: { "Idempotency-Key": key },
+        body: "{}",
+      }),
+    ).not.toThrow();
+    // Once the payment is past the point of cancelling, the 4xx comes back as a ProviderError.
+    await expect(tl.cancelPayment("tl_9")).rejects.toMatchObject({ name: "ProviderError", httpStatus: 400 });
+    expect(calls[2]?.headers["idempotency-key"]).not.toBe(key);
+  });
 });

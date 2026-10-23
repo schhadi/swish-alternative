@@ -6,6 +6,7 @@ export type PushKind =
   | "request_reminder"
   | "request_paid"
   | "request_declined"
+  | "request_cancelled"
   | "collection_due"
   | "collection_reminder"
   | "collection_paid";

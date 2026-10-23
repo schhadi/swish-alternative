@@ -23,6 +23,45 @@ jobs:
       - run: npm run build
       - run: npm test
 
+  backend-postgres:
+    name: Backend · npm test on Postgres
+    runs-on: ubuntu-latest
+    # The schema must run on Postgres unchanged except for the provider line (docs/DECISIONS.md #1); this runs the
+    # whole suite there. The migrations are SQLite's, so the schema is pushed (test/global-setup.ts).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: quid
+          POSTGRES_PASSWORD: quid
+          POSTGRES_DB: quid_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U quid -d quid_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      QUID_TEST_DATABASE_URL: postgresql://quid:quid@localhost:5432/quid_test
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Switch the datasource to Postgres
+        run: |
+          sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma
+          grep -q 'provider = "postgresql"' prisma/schema.prisma
+          npx prisma generate
+      - run: npm test
+
   ios:
     name: iOS · xcodebuild test
     runs-on: macos-15

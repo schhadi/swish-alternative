@@ -7,7 +7,7 @@ import { withKeyedLock } from "../../lib/keyedLock.js";
 import { decryptBankDetails, userOwnerKey } from "../bankAccounts.js";
 import { ProviderError, type PaymentProvider } from "./provider.js";
 import { effectiveRequestStatus, notPendingError } from "../requests/rules.js";
-import { assertWithinLimits, isFirstTimePayee, loadPayableUser, normaliseReference, pounds } from "./rules.js";
+import { assertNewPayeeAllowance, assertWithinLimits, isFirstTimePayee, loadPayableUser, normaliseReference, pounds } from "./rules.js";
 import { applyTransition } from "./stateMachine.js";
 
 /** Either a payee, amount and reference typed by the payer, or a request to pay (which fixes all three). */
@@ -53,6 +53,7 @@ export async function createPeerPayment(provider: PaymentProvider, input: Create
     const payee = await loadPayableUser(tx, terms.payeeUserId, input.payer.id, now);
     await assertWithinLimits(tx, input.payer.id, terms.amountMinor, now);
     const firstTimePayee = await isFirstTimePayee(tx, input.payer.id, payee.id);
+    if (firstTimePayee) await assertNewPayeeAllowance(tx, input.payer.id, payee.id, now);
     const payerBank = await tx.bankAccount.findUnique({ where: { userId: input.payer.id }, select: { providerId: true } });
     const payment = await tx.payment.create({
       data: {
@@ -64,6 +65,7 @@ export async function createPeerPayment(provider: PaymentProvider, input: Create
         reference: terms.reference,
         status: "CREATED",
         providerId: payerBank?.providerId ?? null,
+        firstTimePayee,
         createdAt: now,
       },
     });
@@ -86,6 +88,7 @@ export async function createPeerPayment(provider: PaymentProvider, input: Create
     log,
   );
   const payment = await prisma.payment.findUniqueOrThrow({ where: { id: prepared.payment.id } });
+  if (prepared.firstTimePayee) logNameDisclosure(log, payment.id, input.payer.id, { payeeUserId: prepared.payee.id });
 
   return {
     payment,
@@ -119,6 +122,11 @@ async function loadPayableRequest(requestId: string, payerUserId: string, amount
     throw new HttpError(400, "request_amount_mismatch", `This request is for ${pounds(request.amountMinor)}.`, { amountMinor: request.amountMinor });
   }
   return { payeeUserId: request.requesterUserId, amountMinor: request.amountMinor, reference: request.reference, requestId: request.id };
+}
+
+/** Audit line for every response that carries a payee's bank-held name (ids only, never the name itself). */
+export function logNameDisclosure(log: FastifyBaseLogger, paymentId: string, payerUserId: string, payee: { payeeUserId: string } | { organisationId: string }): void {
+  log.info({ audit: "payee_name_disclosed", paymentId, payerUserId, ...payee }, "first-time payee name disclosed");
 }
 
 export interface ProviderCall {

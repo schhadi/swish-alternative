@@ -54,6 +54,16 @@ export class FakePaymentProvider implements PaymentProvider {
     return { ...record.state };
   }
 
+  /** Cancels at once while the payer has not finished at the bank, as TrueLayer reports it: failed, "canceled". */
+  async cancelPayment(providerPaymentId: string): Promise<void> {
+    const record = this.records.get(providerPaymentId);
+    if (!record) throw new ProviderError("fake payment not found", 404, "not_found");
+    if (!["authorization_required", "authorizing", "authorized"].includes(record.state.status)) {
+      throw new ProviderError("fake payment not cancellable", 400, "not_cancellable");
+    }
+    record.state = { ...record.state, status: "failed", failureReason: "canceled" };
+  }
+
   /** What the dev page shows: never the account identifiers. */
   describe(providerPaymentId: string): { amountMinor: number; accountHolderName: string; reference: string; status: ProviderStatus } | null {
     const record = this.records.get(providerPaymentId);

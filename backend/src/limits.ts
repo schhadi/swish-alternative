@@ -36,6 +36,11 @@ export const LIMITS = {
   createdWithoutProviderExpiryMinutes: 10,
   /** Upper bound on one call to the payment provider, so the app's own 20 s timeout sees a real answer */
   providerRequestTimeoutMs: 15_000,
+  /**
+   * New people one payer can start paying in a rolling 24 hours. Each first payment shows the payee's bank-held name,
+   * so this caps how many names one account can learn a day (docs/DECISIONS.md #63, #93).
+   */
+  newPayeesPer24h: 10,
   /** POST /payments per user per minute */
   paymentCreationsPerMinute: 20,
   /** A webhook whose signed timestamp is further from now than this is logged at warn (never refused) */

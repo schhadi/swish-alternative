@@ -37,6 +37,12 @@ export interface ProviderPaymentState {
 export interface PaymentProvider {
   createPayment(input: CreatePaymentInput): Promise<CreatedProviderPayment>;
   getPayment(providerPaymentId: string): Promise<ProviderPaymentState>;
+  /**
+   * Asks the provider to cancel a payment the payer has not completed. Resolving means the request was accepted, not
+   * that the payment is cancelled: the outcome is read back with getPayment (and arrives by webhook). A 4xx
+   * ProviderError means the payment is no longer cancellable.
+   */
+  cancelPayment(providerPaymentId: string): Promise<void>;
 }
 
 /** Raised for any provider failure; carries no request or response body, only what is safe to log. */

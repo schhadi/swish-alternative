@@ -7,6 +7,7 @@ import { env } from "../config.js";
 import { HttpError } from "../lib/errors.js";
 import { LIMITS } from "../limits.js";
 import { createCollectionPayment } from "../services/collections/service.js";
+import { cancelPaymentForPayer } from "../services/payments/cancel.js";
 import { createPeerPayment } from "../services/payments/create.js";
 import { providerDisplayName } from "../services/providers.js";
 
@@ -111,6 +112,19 @@ export async function paymentRoutes(app: FastifyInstance): Promise<void> {
       },
       payment: paymentDTO(payment, user.id, providers),
     });
+  });
+
+  /**
+   * The payer backs out before finishing at the bank (not in SPEC 5; docs/DECISIONS.md #92). Answers the payment as it
+   * now stands: CANCELLED once the provider has confirmed, otherwise still in flight until the webhook arrives.
+   */
+  app.post("/payments/:id/cancel", { preHandler: [requireAuth, creationLimit] }, async (request) => {
+    const { id: userId } = currentUser(request);
+    const { id } = z.object({ id: z.string().min(1).max(64) }).parse(request.params);
+    await cancelPaymentForPayer(app.services.paymentProvider, id, userId, request.log);
+    const providers = await app.services.providerSource.list();
+    const row = await prisma.payment.findUniqueOrThrow({ where: { id }, include });
+    return paymentDTO(row, userId, providers);
   });
 
   /** Activity feed, newest first. */

@@ -108,13 +108,14 @@ export function referenceFromTitle(title: string): string {
   return kept.length > 0 ? kept : "Quid split";
 }
 
-/** Why a request can no longer be paid, declined or nudged. */
+/** Why a request can no longer be paid, declined, cancelled or nudged. */
 export function notPendingError(status: RequestStatus): HttpError {
   const messages: Record<RequestStatus, string> = {
     PENDING: "This request is still open.",
     PAID: "This request has already been paid.",
     DECLINED: "This request was declined.",
     EXPIRED: "This request has expired.",
+    CANCELLED: "This request was cancelled.",
   };
   return new HttpError(409, "request_not_pending", messages[status], { status });
 }
